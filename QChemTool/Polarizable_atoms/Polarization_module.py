@@ -4,17 +4,19 @@ Created on Tue Jan 31 14:33:56 2017
 
 @author: Vladislav Sláma
 """
-
-import QuantumChem.classmolecule as clas
-import QuantumChem.output as out
-import QuantumChem.interaction as inter
-import QuantumChem.positioningTools as pos
-import General.constants as const
-import QuantumChem.calc as calc
 import numpy as np
-import QuantumChem.read_mine as read
-import Polarizable_atoms.Electrostatics_module as ElStatMol
 from scipy.spatial.distance import pdist,squareform
+
+from ..QuantumChem.Classes.molecule import Molecule
+from ..QuantumChem.Classes.structure import Structure
+from ..QuantumChem.output import OutputMathematica
+from ..QuantumChem.calc import GuessBonds, identify_molecule
+from ..QuantumChem.positioningTools import project_on_plane, CenterMolecule
+from ..General.units import conversion_facs_energy
+from ..QuantumChem.read_mine import read_TrEsp_charges
+from .Electrostatics_module import PrepareMolecule_1Def as ElStat_PrepareMolecule_1Def
+from .Electrostatics_module import PrepareMolecule_2Def as ElStat_PrepareMolecule_2Def
+from ..General.Potential import potential_charge, potential_dipole, ElField_dipole
 
 debug=False
 
@@ -179,12 +181,10 @@ class Dielectric:
             P[ii,:]=np.dot(self.polar[typ][ii],ELFV[ii,:])
         
         if debug and typ=='AlphaE':
-            import General.functions as func
-            import General.Potential as pot
             # Test first order induced dipoles            
             self.dipole=np.zeros((self.Nat,3),dtype='f8')
             self.calc_dipoles_All('AlphaE',NN=1)
-            if func.are_similar(P,self.dipole):
+            if np.allclose(P,self.dipole):
                 print('First order dipoles are the same.')
             else:
                 print('Problem with first order induced dipoles.')
@@ -195,7 +195,7 @@ class Dielectric:
                 Elfield[ii]=np.dot(-T[0,1,ii,:],P[1,:])
             print('Electric field at atom 0 induced by dipole at position 1 wT:',Elfield)
             Elfield=np.zeros(3,dtype='f8')
-            Elfield=pot.ElField_dipole(P[1,:],R[0,1,:])
+            Elfield=ElField_dipole(P[1,:],R[0,1,:])
             print('Electric field at atom 0 induced by dipole at position 1 woT:',Elfield)
         
         ELFV=np.zeros((self.Nat,3),dtype='f8')
@@ -764,7 +764,6 @@ class Dielectric:
         InterE : real
             Interaction energies in atomic units (Hartree)
         '''
-        import Program.General.Potential as pot
         
         if isinstance(charge,np.ndarray) or isinstance(charge,list):
             use_orig_charges=False
@@ -803,8 +802,8 @@ class Dielectric:
         
         # Take only slice of the matrix R[:,jj,:] where jj corespond to indexes 
         R=R[:,index,:]
-        pot_charge=pot.potential_charge(AllCharge,R)
-        pot_dipole=pot.potential_dipole(AllDipole,R)
+        pot_charge=potential_charge(AllCharge,R)
+        pot_dipole=potential_dipole(AllDipole,R)
 
 # TODO: Move to test part
         if debug:
@@ -829,8 +828,8 @@ class Dielectric:
                         #    print('Coor 0,2:',R)
                         #if jj==3 and ii==2:
                         #    print('Coor 2,3:',R)
-                        potential_charge_test[jj]+=pot.potential_charge(AllCharge[ii],R)
-                        potential_dipole_test[jj]+=pot.potential_dipole(AllDipole[ii],R)
+                        potential_charge_test[jj]+=potential_charge(AllCharge[ii],R)
+                        potential_dipole_test[jj]+=potential_dipole(AllDipole[ii],R)
             #print(potential_test)
             print(pot_dipole)
             print(potential_dipole_test)
@@ -848,8 +847,8 @@ class Dielectric:
                 for ii in range(self.Nat):
                     if ii!=index[jj]:
                         R=self.coor[index[jj]]-self.coor[ii]
-                        potential+=pot.potential_charge(AllCharge[ii],R)
-                        potential+=pot.potential_dipole(AllDipole[ii],R)
+                        potential+=potential_charge(AllCharge[ii],R)
+                        potential+=potential_dipole(AllDipole[ii],R)
                 InterE+=potential*charge[jj]
             
             if np.allclose(InterE,np.dot(charge,pot_charge+pot_dipole)):
@@ -878,7 +877,6 @@ class Dielectric:
             
         
         '''
-        import Program.General.Potential as pot
             
         
         # coppy charges and assign zero charges to those in index
@@ -923,7 +921,7 @@ class Dielectric:
         R = R-rr                                               # R[ii,jj,:]=charge_coor[jj]-dipole_coor[ii]
         
 # TODO: There is no posibility to have charge and dipole on same atom (correct this) - so far no possibility to have zero R
-        pot_dipole = pot.potential_dipole(dipole, R)
+        pot_dipole = potential_dipole(dipole, R)
         InterE = -np.dot(charge, pot_dipole)
         
         if debug:
@@ -933,7 +931,7 @@ class Dielectric:
                 potential=0.0
                 for ii in range(len(dipole)):
                         R=charge_coor[jj]-dipole_coor[ii]
-                        potential+=pot.potential_dipole(dipole[ii],R)
+                        potential+=potential_dipole(dipole[ii],R)
                 InterE2-=potential*charge[jj]   
                 # minus is here because we dont want to calculate interaction energy
                 # but interaction of electric field of transition charges with induced
@@ -1400,7 +1398,7 @@ class Dielectric:
         
         # TrEsp interaction energy
         E_TrEsp=self.get_interaction_energy(index,charge=charge) 
-        #print('TrEsp interaction:',E_TrEsp*const.HaToInvcm)
+        #print('TrEsp interaction:',E_TrEsp*conversion_facs_energy["1/cm"])
         # this will put zero charges on index atoms then calculate potential from
         # everything else and calculate interaction with charges defined by charges
         # original charges and dipoles remain unchanged
@@ -1495,7 +1493,7 @@ class Dielectric:
         
         # TrEsp interaction energy
         E_TrEsp=self.get_interaction_energy(index,charge=charge) 
-        #print('TrEsp interaction:',E_TrEsp*const.HaToInvcm)
+        #print('TrEsp interaction:',E_TrEsp*conversion_facs_energy["1/cm"])
         # this will put zero charges on index atoms then calculate potential from
         # everything else and calculate interaction with charges defined by charges
         # original charges and dipoles remain unchanged
@@ -1617,18 +1615,19 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
     
     if verbose:
         print('     Reading charges and format to polarization format...')
-    mol_test=clas.QchMolecule('Perylene-charge')
+    mol_test=Molecule('Perylene-charge')
+    
     mol_test.load_xyz(xyzfile2)
     if verbose:
         print('        Loading molecule...')
-    mol=clas.QchMolecule('FGrph-1Perylene')
+    mol=Molecule('FGrph-1Perylene')
     mol.load_xyz(xyzfile)
-    coor,charge,at_type=read.read_TrEsp_charges(filenameESP)
+    coor,charge,at_type=read_TrEsp_charges(filenameESP)
     if verbose:
         print('        Centering molecule...')
     mol.center_molecule(indx_center1,indx_x1,indx_y1)
     
-    index1=calc.identify_molecule(mol,mol_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index1=identify_molecule(mol.struc,mol_test.struc,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
 
     if len(index1)!=len(np.unique(index1)):
         raise IOError('There are repeating elements in index file')
@@ -1637,15 +1636,15 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
     PolType=[]
     Polcharge=[]
     PolCoor=[]
-    for ii in range(mol.at_spec['NAtoms']):
-        if mol.at_spec['AtType'][ii]=='C' and (ii in index1):
+    for ii in range(mol.struc.nat):
+        if mol.struc.at_type[ii]=='C' and (ii in index1):
             Polcharge.append(charge[np.where(index1==ii)[0][0]])
             PolType.append('C')
-            PolCoor.append(mol.at_spec['Coor'][ii])
-        elif mol.at_spec['AtType'][ii]=='C':
+            PolCoor.append(mol.struc.coor._value['Coor'][ii])
+        elif mol.struc.at_type[ii]=='C':
             PolType.append('CF')
             Polcharge.append(0.0)
-            PolCoor.append(mol.at_spec['Coor'][ii])
+            PolCoor.append(mol.struc.coor._value[ii])
     PolType=np.array(PolType)
     Polcharge=np.array(Polcharge,dtype='f8')
     PolCoor=np.array(PolCoor,dtype='f8')
@@ -1653,7 +1652,7 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
     # project molecule whole system to plane defined by defect
     nvec=np.array([0.0,0.0,1.0],dtype='f8')
     center=np.array([0.0,0.0,0.0],dtype='f8')
-    PolCoor=pos.project_on_plane(PolCoor,nvec,center)
+    PolCoor=project_on_plane(PolCoor,nvec,center)
     
     polar={}
     polar['AlphaE']=np.zeros((len(PolCoor),3,3),dtype='f8')
@@ -1762,18 +1761,18 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
     #filenameESP="".join([MolDir,'Perylene_TDDFT_fitted_charges_NoH.out'])
     if verbose:
         print('     Reading charges and format to polarization format...')
-    mol_test=clas.QchMolecule('Perylene-charge')
+    mol_test=Molecule('Perylene-charge')
     mol_test.load_xyz(xyzfile2)
-    coor,charge,at_type=read.read_TrEsp_charges(filenameESP)
+    coor,charge,at_type=read_TrEsp_charges(filenameESP)
     
     # load molecule - fuorographene with 2 defects 
     if verbose:
         print('        Loading molecule...')
-    mol=clas.QchMolecule('FGrph-2Perylene')
+    mol=Molecule('FGrph-2Perylene')
     mol.load_xyz(xyzfile)
     
-    index1=calc.identify_molecule(mol,mol_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
-    index2=calc.identify_molecule(mol,mol_test,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index1=identify_molecule(mol.struc,mol_test.struc,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index2=identify_molecule(mol.struc,mol_test.struc,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
     if len(index1)!=len(np.unique(index1)) or len(index2)!=len(np.unique(index2)):
         print('index1:')
         print(index1)
@@ -1785,20 +1784,20 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
     PolType=[]
     Polcharge=[]
     PolCoor=[]
-    for ii in range(mol.at_spec['NAtoms']):
-        if mol.at_spec['AtType'][ii]=='C' and (ii in index1):
+    for ii in range(mol.struc.nat):
+        if mol.struc.at_type[ii]=='C' and (ii in index1):
             Polcharge.append(charge[np.where(index1==ii)[0][0]])
             PolType.append('C')
-            PolCoor.append(mol.at_spec['Coor'][ii])
-        elif mol.at_spec['AtType'][ii]=='C' and (ii in index2):
+            PolCoor.append(mol.struc.coor._value[ii])
+        elif mol.struc.at_type[ii]=='C' and (ii in index2):
             Polcharge.append(0.0)
             #Polcharge.append(charge[np.where(index2==ii)[0][0]])
             PolType.append('C')
-            PolCoor.append(mol.at_spec['Coor'][ii])
-        elif mol.at_spec['AtType'][ii]=='C':
+            PolCoor.append(mol.struc.coor._value[ii])
+        elif mol.struc.at_type[ii]=='C':
             PolType.append('CF')
             Polcharge.append(0.0)
-            PolCoor.append(mol.at_spec['Coor'][ii])
+            PolCoor.append(mol.struc.coor._value[ii])
             
     PolType=np.array(PolType)
     Polcharge=np.array(Polcharge,dtype='f8')
@@ -1806,12 +1805,12 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
     
     # project molecule whole system to plane defined by defect
     center=np.array([0.0,0.0,0.0],dtype='f8')
-    PolCoor=pos.project_on_plane(PolCoor,nvec,center)
+    PolCoor=project_on_plane(PolCoor,nvec,center)
     
     # center projected molecule on plane
     if verbose:
         print('        Centering molecule...')
-    PolCoor=pos.CenterMolecule(PolCoor,indx_center1,indx_x1,indx_y1)
+    PolCoor=CenterMolecule(PolCoor,indx_center1,indx_x1,indx_y1)
     
     polar={}
     polar['AlphaE']=np.zeros((len(PolCoor),3,3),dtype='f8')
@@ -1941,11 +1940,11 @@ def CalculateTrDip(filenames,ShortName,index_all,Dipole_QCH,Dip_all,AlphaE,Alpha
             mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs)
         else:
             mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False)
-        mol_Elstat,at_type=ElStatMol.PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
+        mol_Elstat,at_type=ElStat_PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
 
         # calculate <A|V|A>-<G|V|G>
         DE=mol_Elstat.get_EnergyShift()
-        #print('DE:',DE*const.HaToInvcm,'cm-1')
+        #print('DE:',DE*conversion_facs_energy["1/cm"],'cm-1')
 
         # calculate transition dipole        
         TrDip,AtDipoles=mol_polar.get_TrDip(DE,order=order,output_dipoles=True,approx=approx)
@@ -1957,9 +1956,9 @@ def CalculateTrDip(filenames,ShortName,index_all,Dipole_QCH,Dip_all,AlphaE,Alpha
         
         if MathOut:
             # output dipoles to mathematica
-            Bonds=inter.GuessBonds(mol_polar.coor,bond_length=4.0)
+            Bonds=GuessBonds(mol_polar.coor,bond_length=4.0)
             mat_filename="".join(['Pictures/Polar_',ShortName[ii],'.nb'])
-            out.OutputMathematica(mat_filename,mol_polar.coor,Bonds,['C']*mol_polar.Nat,scaleDipole=30.0,**{'TrPointCharge': mol_polar.charge,'AtDipole': AtDipoles,'rSphere_dip': 0.5,'rCylinder_dip':0.1})
+            OutputMathematica(mat_filename,mol_polar.coor,Bonds,['C']*mol_polar.Nat,scaleDipole=30.0,**{'TrPointCharge': mol_polar.charge,'AtDipole': AtDipoles,'rSphere_dip': 0.5,'rCylinder_dip':0.1})
 
 def CalculateEnergyShift(filenames,ShortName,index_all,Eshift_QCH,Eshift_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,**kwargs):
     ''' Calculate transition energy shifts for defect embeded in polarizable atom
@@ -2066,25 +2065,25 @@ def CalculateEnergyShift(filenames,ShortName,index_all,Eshift_QCH,Eshift_all,Alp
             mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs)
         else:
             mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False)
-        mol_Elstat,at_type=ElStatMol.PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
+        mol_Elstat,at_type=ElStat_PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
 
         # calculate <A|V|A>-<G|V|G>
         DE=mol_Elstat.get_EnergyShift()
-        #print('DE:',DE*const.HaToInvcm,'cm-1')
+        #print('DE:',DE*conversion_facs_energy["1/cm"],'cm-1')
 
         # calculate transition dipole
         Eshift,AtDipoles=mol_polar.calculate_EnergyShift(index1,charge,DE,order=order,output_dipoles=True,approx=approx)
         
         if verbose:
-            print('        Transition enegy shift:',Eshift*const.HaToInvcm,'Quantum chemistry shift:',Eshift_QCH[ii])
-        print(ShortName[ii],Eshift_QCH[ii],Eshift*const.HaToInvcm) 
-        Eshift_all[ii]=Eshift*const.HaToInvcm
+            print('        Transition enegy shift:',Eshift*conversion_facs_energy["1/cm"],'Quantum chemistry shift:',Eshift_QCH[ii])
+        print(ShortName[ii],Eshift_QCH[ii],Eshift*conversion_facs_energy["1/cm"]) 
+        Eshift_all[ii]=Eshift*conversion_facs_energy["1/cm"]
         
         if MathOut:
             # output dipoles to mathematica
-            Bonds=inter.GuessBonds(mol_polar.coor,bond_length=4.0)
+            Bonds=GuessBonds(mol_polar.coor,bond_length=4.0)
             mat_filename="".join(['Pictures/Polar_',ShortName[ii],'.nb'])
-            out.OutputMathematica(mat_filename,mol_polar.coor,Bonds,['C']*mol_polar.Nat,scaleDipole=30.0,**{'TrPointCharge': mol_polar.charge,'AtDipole': AtDipoles,'rSphere_dip': 0.5,'rCylinder_dip':0.1})
+            OutputMathematica(mat_filename,mol_polar.coor,Bonds,['C']*mol_polar.Nat,scaleDipole=30.0,**{'TrPointCharge': mol_polar.charge,'AtDipole': AtDipoles,'rSphere_dip': 0.5,'rCylinder_dip':0.1})
             
 def CalculateInterE(filenames,ShortName,index_all,Energy_QCH,Energy_all,nvec_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,**kwargs):
     ''' Calculate interaction energies between defects embeded in polarizable atom
@@ -2193,25 +2192,25 @@ def CalculateInterE(filenames,ShortName,index_all,Energy_QCH,Energy_all,nvec_all
         else:
             mol_polar,index1,index2,charge=prepare_molecule_2Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all[ii],verbose=False)
         # calculate <A|V|A>-<G|V|G>
-        mol_Elstat,at_type=ElStatMol.PrepareMolecule_2Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
+        mol_Elstat,at_type=ElStat_PrepareMolecule_2Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
         DE=mol_Elstat.get_EnergyShift()
-        #print('DE:',DE*const.HaToInvcm,'cm-1')
+        #print('DE:',DE*conversion_facs_energy["1/cm"],'cm-1')
 
         # calculate interaction energy       
         Einter,AtDipoles=mol_polar.calculate_InteractionEnergy(index2,charge,DE,order=order,output_dipoles=True,approx=approx)
         
         if verbose:
-            print('        Total interaction energy:',Einter*const.HaToInvcm,'Quantum interaction energy:',Energy_QCH[ii])
+            print('        Total interaction energy:',Einter*conversion_facs_energy["1/cm"],'Quantum interaction energy:',Energy_QCH[ii])
 
-        print(ShortName[ii],Energy_QCH[ii],abs(Einter*const.HaToInvcm))        
+        print(ShortName[ii],Energy_QCH[ii],abs(Einter*conversion_facs_energy["1/cm"]))        
         
-        Energy_all[ii]=abs(Einter*const.HaToInvcm)
+        Energy_all[ii]=abs(Einter*conversion_facs_energy["1/cm"])
         
         if MathOut:
             # output dipoles to mathematica
-            Bonds=inter.GuessBonds(mol_polar.coor,bond_length=4.0)
+            Bonds=GuessBonds(mol_polar.coor,bond_length=4.0)
             mat_filename="".join(['Pictures/Polar_',ShortName[ii],'.nb'])
-            out.OutputMathematica(mat_filename,mol_polar.coor,Bonds,['C']*mol_polar.Nat,scaleDipole=30.0,**{'TrPointCharge': mol_polar.charge,'AtDipole': AtDipoles,'rSphere_dip': 0.5,'rCylinder_dip':0.1})
+            OutputMathematica(mat_filename,mol_polar.coor,Bonds,['C']*mol_polar.Nat,scaleDipole=30.0,**{'TrPointCharge': mol_polar.charge,'AtDipole': AtDipoles,'rSphere_dip': 0.5,'rCylinder_dip':0.1})
 
 
 '''----------------------- TEST PART --------------------------------'''
