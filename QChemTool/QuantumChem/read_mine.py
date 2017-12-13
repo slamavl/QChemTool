@@ -2147,6 +2147,7 @@ def read_TrEsp_charges(filename,verbose=True,dipole=False):
     coor=[]
     charge=[]
     at_type=[]
+    section=None
     for line in flines:
         if 'atom' in line:
             section='geom_charge'

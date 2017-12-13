@@ -88,14 +88,14 @@ def rsmd(coor1,coor2):
     return res
 
 def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=False):
-    import Program_Test.QuantumChem.positioningTools as pos
+    from .positioningTools import AlignMolecules
    
     if struc.coor.units!=struc_test.coor.units:
         struc.coor.Angst2Bohr()
         struc_test.coor.Angst2Bohr()
         
     
-    Coor_alligned=pos.AlignMolecules(struc.coor.value,struc_test.coor.value,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test)
+    Coor_alligned=AlignMolecules(struc.coor.value,struc_test.coor.value,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test)
     # Toto by melo posunout optimalizovanou molekulu do pozice te na fluorofrafenu
     
     # By comparison distance between same atomic types we can guess correspondding atoms
@@ -140,7 +140,7 @@ def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_
     return index1
 
 def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=False):
-    from Program.QuantumChem.interaction import dipole_dipole 
+    from .interaction import dipole_dipole 
     cutoff_dist=4.0
     TrDip_norm=numpy.linalg.norm(TrDip)
     
