@@ -7,7 +7,6 @@ Created on Tue Jan 31 14:33:56 2017
 import numpy as np
 from scipy.spatial.distance import pdist,squareform
 
-from ..QuantumChem.Classes.molecule import Molecule
 from ..QuantumChem.Classes.structure import Structure
 from ..QuantumChem.output import OutputMathematica
 from ..QuantumChem.calc import GuessBonds, identify_molecule
@@ -1615,19 +1614,19 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
     
     if verbose:
         print('     Reading charges and format to polarization format...')
-    mol_test=Molecule('Perylene-charge')
-    
-    mol_test.load_xyz(xyzfile2)
+    struc_test=Structure()
+    struc_test.load_xyz(xyzfile2)
     if verbose:
         print('        Loading molecule...')
-    mol=Molecule('FGrph-1Perylene')
-    mol.load_xyz(xyzfile)
-    coor,charge,at_type=read_TrEsp_charges(filenameESP)
+    struc=Structure()
+    struc.load_xyz(xyzfile)
+    
+    coor,charge,at_type=read_TrEsp_charges(filenameESP,verbose=False)
     if verbose:
         print('        Centering molecule...')
-    mol.center_molecule(indx_center1,indx_x1,indx_y1)
+    struc.center(indx_center1,indx_x1,indx_y1)
     
-    index1=identify_molecule(mol.struc,mol_test.struc,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index1=identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
 
     if len(index1)!=len(np.unique(index1)):
         raise IOError('There are repeating elements in index file')
@@ -1636,15 +1635,15 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
     PolType=[]
     Polcharge=[]
     PolCoor=[]
-    for ii in range(mol.struc.nat):
-        if mol.struc.at_type[ii]=='C' and (ii in index1):
+    for ii in range(struc.nat):
+        if struc.at_type[ii]=='C' and (ii in index1):
             Polcharge.append(charge[np.where(index1==ii)[0][0]])
             PolType.append('C')
-            PolCoor.append(mol.struc.coor._value['Coor'][ii])
-        elif mol.struc.at_type[ii]=='C':
+            PolCoor.append(struc.coor._value[ii])
+        elif struc.at_type[ii]=='C':
             PolType.append('CF')
             Polcharge.append(0.0)
-            PolCoor.append(mol.struc.coor._value[ii])
+            PolCoor.append(struc.coor._value[ii])
     PolType=np.array(PolType)
     Polcharge=np.array(Polcharge,dtype='f8')
     PolCoor=np.array(PolCoor,dtype='f8')
@@ -1761,18 +1760,18 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
     #filenameESP="".join([MolDir,'Perylene_TDDFT_fitted_charges_NoH.out'])
     if verbose:
         print('     Reading charges and format to polarization format...')
-    mol_test=Molecule('Perylene-charge')
-    mol_test.load_xyz(xyzfile2)
-    coor,charge,at_type=read_TrEsp_charges(filenameESP)
+    struc_test=Structure()
+    struc_test.load_xyz(xyzfile2)
+    coor,charge,at_type=read_TrEsp_charges(filenameESP,verbose=False)
     
     # load molecule - fuorographene with 2 defects 
     if verbose:
         print('        Loading molecule...')
-    mol=Molecule('FGrph-2Perylene')
-    mol.load_xyz(xyzfile)
+    struc=Structure()
+    struc.load_xyz(xyzfile)
     
-    index1=identify_molecule(mol.struc,mol_test.struc,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
-    index2=identify_molecule(mol.struc,mol_test.struc,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index1=identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index2=identify_molecule(struc,struc_test,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
     if len(index1)!=len(np.unique(index1)) or len(index2)!=len(np.unique(index2)):
         print('index1:')
         print(index1)
@@ -1784,20 +1783,20 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
     PolType=[]
     Polcharge=[]
     PolCoor=[]
-    for ii in range(mol.struc.nat):
-        if mol.struc.at_type[ii]=='C' and (ii in index1):
+    for ii in range(struc.nat):
+        if struc.at_type[ii]=='C' and (ii in index1):
             Polcharge.append(charge[np.where(index1==ii)[0][0]])
             PolType.append('C')
-            PolCoor.append(mol.struc.coor._value[ii])
-        elif mol.struc.at_type[ii]=='C' and (ii in index2):
+            PolCoor.append(struc.coor._value[ii])
+        elif struc.at_type[ii]=='C' and (ii in index2):
             Polcharge.append(0.0)
             #Polcharge.append(charge[np.where(index2==ii)[0][0]])
             PolType.append('C')
-            PolCoor.append(mol.struc.coor._value[ii])
-        elif mol.struc.at_type[ii]=='C':
+            PolCoor.append(struc.coor._value[ii])
+        elif struc.at_type[ii]=='C':
             PolType.append('CF')
             Polcharge.append(0.0)
-            PolCoor.append(mol.struc.coor._value[ii])
+            PolCoor.append(struc.coor._value[ii])
             
     PolType=np.array(PolType)
     Polcharge=np.array(Polcharge,dtype='f8')

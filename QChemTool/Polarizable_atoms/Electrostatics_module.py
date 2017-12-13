@@ -6,7 +6,7 @@ Created on Tue Jan 31 14:33:56 2017
 """
 import numpy as np
 
-from ..QuantumChem.Classes.molecule import Molecule
+from ..QuantumChem.Classes.structure import Structure
 from ..QuantumChem.interaction import charge_charge
 from ..QuantumChem.calc import identify_molecule
 from ..QuantumChem.read_mine import read_TrEsp_charges, read_mol2, read_gaussian_esp
@@ -142,20 +142,21 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     # Read filesif verbose:
     if verbose:
         print('        Loading molecules and charges...')
-    mol_test=Molecule('Perylene-charge')
-    mol_test.load_xyz(xyzfile2)
-    mol=Molecule('FGrph-1Perylene')
-    mol.load_xyz(xyzfile)
+    struc_test=Structure()
+    struc_test.load_xyz(xyzfile2)
+    struc=Structure()
+    struc.load_xyz(xyzfile)
+    
     if ChargeType=='qchem' or ChargeType=='qchem_all':
-        coor_grnd,charge_grnd,at_type=read_TrEsp_charges(filenameESP_grnd)
-        coor_exct,charge_exct,at_type=read_TrEsp_charges(filenameESP_exct)
+        coor_grnd,charge_grnd,at_type=read_TrEsp_charges(filenameESP_grnd,verbose=False)
+        coor_exct,charge_exct,at_type=read_TrEsp_charges(filenameESP_exct,verbose=False)
     if ChargeType=='AMBER':
         coor_grnd,Bond,charge_grnd,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_grnd)
         coor_exct,Bond,charge_exct,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_exct)
     if ChargeType=='gaussian':
         Points,ESP,coor_grnd,charge_grnd=read_gaussian_esp(filenameESP_grnd,output_charge=True)
         Points,ESP,coor_exct,charge_exct=read_gaussian_esp(filenameESP_exct,output_charge=True)
-#    mol.center_molecule(indx_center1,indx_x1,indx_y1)
+#    struc.center(indx_center1,indx_x1,indx_y1)
     
     if ChargeType=='qchem_all':
         # ground state charges
@@ -190,43 +191,43 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         coor_exct=np.copy(coor)
         charge_exct=np.copy(charge)
     
-    index1=identify_molecule(mol.struc,mol_test.struc,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index1=identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
     if len(index1)!=len(np.unique(index1)):
         raise IOError('There are repeating elements in index file')
         
     # Identify inside carbons connected to fluorines and outside ones
-    mol.guess_bonds()
-    NBonds=np.zeros(len(mol.struc.bonds),dtype='i')
-    for ii in range(len(mol.struc.bonds)):
-        if mol.struc.at_type[mol.struc.bonds[ii,0]]=='C' and mol.struc.at_type[mol.struc.bonds[ii,1]]=='F':
-            NBonds[mol.struc.bonds[ii,0]]+=1
+    struc.guess_bonds()
+    NBonds=np.zeros(len(struc.bonds),dtype='i')
+    for ii in range(len(struc.bonds)):
+        if struc.at_type[struc.bonds[ii,0]]=='C' and struc.at_type[struc.bonds[ii,1]]=='F':
+            NBonds[struc.bonds[ii,0]]+=1
     
     # Assing type for every atom - in this step all fluorines will have the same type
     Elstat_Type=[]
-    for ii in range(mol.struc.nat):
-        if mol.struc.at_type[ii]=='C':
+    for ii in range(struc.nat):
+        if struc.at_type[ii]=='C':
             if NBonds[ii]==2:
                 Elstat_Type.append('CF2')
             elif NBonds[ii]==1:
                 Elstat_Type.append('CF')
             else:
                 Elstat_Type.append('CD')
-        elif mol.struc.at_type[ii]=='F':
+        elif struc.at_type[ii]=='F':
             Elstat_Type.append('FC')
     
     # Assign different atom types for fluorines at the border:
-    for ii in range(len(mol.struc.bonds)):
-        if Elstat_Type[mol.struc.bonds[ii,0]]=='CF2' and Elstat_Type[mol.struc.bonds[ii,1]]=='FC':
-            Elstat_Type[mol.struc.bonds[ii,1]]='F2C'
+    for ii in range(len(struc.bonds)):
+        if Elstat_Type[struc.bonds[ii,0]]=='CF2' and Elstat_Type[struc.bonds[ii,1]]=='FC':
+            Elstat_Type[struc.bonds[ii,1]]='F2C'
     
     # Check if defect carbons were correctly determined:
-    for ii in range(mol.struc.nat):
+    for ii in range(struc.nat):
         if Elstat_Type[ii]=='CD' and ( not (ii in index1)):
             raise IOError('Wrongly determined defect atoms')
             
     # Asign charges for fluorographene:
-    Elstat_Charge=np.zeros(mol.struc.nat,dtype='f8')
-    for ii in range(mol.struc.nat):
+    Elstat_Charge=np.zeros(struc.nat,dtype='f8')
+    for ii in range(struc.nat):
         Elstat_Charge[ii]=FG_charges[Elstat_Type[ii]]
     
     # Asign charges for defect:
@@ -237,9 +238,9 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         Elstat_Charge_exct[index1[ii]]=charge_exct[ii]
         Elstat_Charge[index1[ii]]=charge_exct[ii]-charge_grnd[ii]
     
-    Elstat_mol=Electrostatics(mol.struc.coor._value,Elstat_Charge,Elstat_Type) 
+    Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type) 
     
-    return Elstat_mol,mol.struc.at_type
+    return Elstat_mol,struc.at_type
 
 def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False):
     ''' Read all informations needed for Electrostatics class and transform system
@@ -310,13 +311,13 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     # Read files:
     if verbose:
         print('        Loading molecules and charges...')
-    mol_test=Molecule('Perylene-charge')
-    mol_test.load_xyz(xyzfile2)
-    mol=Molecule('FGrph-2Perylene')
-    mol.load_xyz(xyzfile)
+    struc_test=Structure()  # from charge fitting
+    struc_test.load_xyz(xyzfile2)
+    struc=Structure()
+    struc.load_xyz(xyzfile)  #FG with two defects
     if ChargeType=='qchem' or ChargeType=='qchem_all':
-        coor_grnd,charge_grnd,at_type=read_TrEsp_charges(filenameESP_grnd)
-        coor_exct,charge_exct,at_type=read_TrEsp_charges(filenameESP_exct)
+        coor_grnd,charge_grnd,at_type=read_TrEsp_charges(filenameESP_grnd,verbose=False)
+        coor_exct,charge_exct,at_type=read_TrEsp_charges(filenameESP_exct,verbose=False)
     if ChargeType=='AMBER':
         coor_grnd,Bond,charge_grnd,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_grnd)
         coor_exct,Bond,charge_exct,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_exct)
@@ -358,23 +359,23 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         coor_exct=np.copy(coor)
         charge_exct=np.copy(charge)
     
-    index1=identify_molecule(mol.struc,mol_test.struc,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
-    index2=identify_molecule(mol.struc,mol_test.struc,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index1=identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index2=identify_molecule(struc,struc_test,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
     if len(index1)!=len(np.unique(index1)) or len(index2)!=len(np.unique(index2)):
         raise IOError('There are repeating elements in index file')
 
 
     # Identify inside carbons connected to fluorines and outside ones
-    mol.guess_bonds()
-    NBonds=np.zeros(len(mol.struc.bonds),dtype='i')
-    for ii in range(len(mol.struc.bonds)):
-        if mol.struc.at_type[mol.struc.bonds[ii,0]]=='C' and mol.struc.at_type[mol.struc.bonds[ii,1]]=='F':
-            NBonds[mol.struc.bonds[ii,0]]+=1
+    struc.guess_bonds()
+    NBonds=np.zeros(len(struc.bonds),dtype='i')
+    for ii in range(len(struc.bonds)):
+        if struc.at_type[struc.bonds[ii,0]]=='C' and struc.at_type[struc.bonds[ii,1]]=='F':
+            NBonds[struc.bonds[ii,0]]+=1
     
     # Assing type for every atom - in this step all fluorines will have the same type
     Elstat_Type=[]
-    for ii in range(mol.struc.nat):
-        if mol.struc.at_type[ii]=='C':
+    for ii in range(struc.nat):
+        if struc.at_type[ii]=='C':
             if NBonds[ii]==2:
                 Elstat_Type.append('CF2')
             elif NBonds[ii]==1:
@@ -383,24 +384,24 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
                 Elstat_Type.append('CD')
             elif ii in index2:
                 Elstat_Type.append('C')
-        elif mol.struc.at_type[ii]=='F':
+        elif struc.at_type[ii]=='F':
             Elstat_Type.append('FC')
     
     # Assign different atom types for fluorines at the border:
-    for ii in range(len(mol.struc.bonds)):
-        if Elstat_Type[mol.struc.bonds[ii,0]]=='CF2' and Elstat_Type[mol.struc.bonds[ii,1]]=='FC':
-            Elstat_Type[mol.struc.bonds[ii,1]]='F2C'
+    for ii in range(len(struc.bonds)):
+        if Elstat_Type[struc.bonds[ii,0]]=='CF2' and Elstat_Type[struc.bonds[ii,1]]=='FC':
+            Elstat_Type[struc.bonds[ii,1]]='F2C'
     
     # Check if defect carbons were correctly determined:
-    for ii in range(mol.struc.nat):
+    for ii in range(struc.nat):
         if Elstat_Type[ii]=='CD' and ( not (ii in index1)):
             raise IOError('Wrongly determined defect atoms')
         if Elstat_Type[ii]=='C' and ( not (ii in index2)):
             raise IOError('Wrongly determined defect atoms')
             
     # Asign charges for fluorographene:
-    Elstat_Charge=np.zeros(mol.struc.nat,dtype='f8')
-    for ii in range(mol.struc.nat):
+    Elstat_Charge=np.zeros(struc.nat,dtype='f8')
+    for ii in range(struc.nat):
         Elstat_Charge[ii]=FG_charges[Elstat_Type[ii]]
     
     # Asign charges for defect:
@@ -411,9 +412,9 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         Elstat_Charge_exct[index1[ii]]=charge_exct[ii]
         Elstat_Charge[index1[ii]]=charge_exct[ii]-charge_grnd[ii]
     
-    Elstat_mol=Electrostatics(mol.struc.coor._value,Elstat_Charge,Elstat_Type)
+    Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type)
     
-    return Elstat_mol,mol.struc.at_type
+    return Elstat_mol,struc.at_type
 
 #def _CalculateEshift(filenames,ShortName,index_all,Eshift_QCH,Eshift_all,FG_charges,AlphaE,Alpha_E,BetaE,nvec_all,order=82,ChargeType='qchem',verbose=False):
 #    ''' Calculates transition energy shift for molecule embeded in polarizable 
