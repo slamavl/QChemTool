@@ -1,7 +1,8 @@
-cd pyscf/lib
-mkdir build
-cd build
+cd QChemTool
+tar xvzf ../pyscf.tar.gz
+cd pyscf/lib/build
 cmake ..
 make
 
-export PYTHONPATH=/mnt/sda2/Dropbox/PhD/Programy/Python/Program_Test/pyscf:$PYTHONPATH
+cd ../../../
+export PYTHONPATH=$PWD/pyscf:$PYTHONPATH
