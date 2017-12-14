@@ -41,7 +41,7 @@ class Electrostatics:
         self.at_type=np.copy(at_type)
         self.Nat=len(coor)
     
-    def get_EnergyShift(self):
+    def get_EnergyShift(self,index=None,charge=None):
         ''' Function calculates change in electrostatic interaction energy between
         environment and defect in ground state and defect in excited state.
         <A|V|A>-<G|V|G>
@@ -52,6 +52,16 @@ class Electrostatics:
             Change in interaction energy for pigment in ground state and in 
             excited state in ATOMIC UNITS (Hartree)
         '''
+        
+        # Zero charges on atoms defined by index
+        if index is not None:
+            charge_tmp = np.zeros(len(index),dtype='f8')
+            if charge is None:
+                charge = np.zeros(len(index),dtype='f8')
+
+            for ii in range(len(index)):
+                charge_tmp[ii] = self.charge[index[ii]]
+                self.charge[ii] = charge[ii]
         
         # ground state interaction
         Def_charge=[]
@@ -74,6 +84,11 @@ class Electrostatics:
         
         # calculate interaction energy:
         Eshift,dist=charge_charge(Def_coor,Def_charge,Env_coor,Env_charge,'Hartree')
+        
+        # return charges back to original value
+        if index is not None:
+            for ii in range(len(index)):
+                self.charge[index[ii]] = charge_tmp[ii]
         
         return Eshift
         
@@ -303,64 +318,103 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
                 'F2C': -FG_charges_in[1]/2.0,'CD': 0.0,'C': 0.0}
     
     # Specify files:
-    xyzfile2=filenames['charge_structure']
-    filenameESP_grnd=filenames['charge_grnd']
-    filenameESP_exct=filenames['charge_exct']
+    xyzfile_chrg1=filenames['charge1_structure']
+    filenameESP_grnd1=filenames['charge1_grnd']
+    filenameESP_exct1=filenames['charge1_exct']
+    xyzfile_chrg2=filenames['charge2_structure']
+    filenameESP_grnd2=filenames['charge2_grnd']
+    filenameESP_exct2=filenames['charge2_exct']
     xyzfile=filenames['2def_structure']
     
     # Read files:
     if verbose:
         print('        Loading molecules and charges...')
-    struc_test=Structure()  # from charge fitting
-    struc_test.load_xyz(xyzfile2)
+    struc1_test=Structure()  # from charge fitting
+    struc2_test=Structure()  # from charge fitting
+    struc1_test.load_xyz(xyzfile_chrg1)
+    struc2_test.load_xyz(xyzfile_chrg2)
     struc=Structure()
     struc.load_xyz(xyzfile)  #FG with two defects
     if ChargeType=='qchem' or ChargeType=='qchem_all':
-        coor_grnd,charge_grnd,at_type=read_TrEsp_charges(filenameESP_grnd,verbose=False)
-        coor_exct,charge_exct,at_type=read_TrEsp_charges(filenameESP_exct,verbose=False)
+        coor_grnd1,charge_grnd1,at_type1=read_TrEsp_charges(filenameESP_grnd1,verbose=False)
+        coor_exct1,charge_exct1,at_type1=read_TrEsp_charges(filenameESP_exct1,verbose=False)
+        coor_grnd2,charge_grnd2,at_type2=read_TrEsp_charges(filenameESP_grnd2,verbose=False)
+        coor_exct2,charge_exct2,at_type2=read_TrEsp_charges(filenameESP_exct2,verbose=False)
     if ChargeType=='AMBER':
-        coor_grnd,Bond,charge_grnd,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_grnd)
-        coor_exct,Bond,charge_exct,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_exct)
+        coor_grnd1,Bond,charge_grnd1,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_grnd1)
+        coor_exct1,Bond,charge_exct1,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_exct1)
+        coor_grnd2,Bond,charge_grnd2,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_grnd2)
+        coor_exct2,Bond,charge_exct2,AtName,AtType,MOL,Molname,info=read_mol2(filenameESP_exct2)
     if ChargeType=='gaussian':
-        Points,ESP,coor_grnd,charge_grnd=read_gaussian_esp(filenameESP_grnd,output_charge=True)
-        Points,ESP,coor_exct,charge_exct=read_gaussian_esp(filenameESP_exct,output_charge=True)
-        
-        
+        Points,ESP,coor_grnd1,charge_grnd1=read_gaussian_esp(filenameESP_grnd1,output_charge=True)
+        Points,ESP,coor_exct1,charge_exct1=read_gaussian_esp(filenameESP_exct1,output_charge=True)
+        Points,ESP,coor_grnd2,charge_grnd2=read_gaussian_esp(filenameESP_grnd2,output_charge=True)
+        Points,ESP,coor_exct2,charge_exct2=read_gaussian_esp(filenameESP_exct2,output_charge=True)
     if ChargeType=='qchem_all':
         # ground state charges
         chtmp=0.0
         charge=[]
         coor=[]
-        for ii in range(len(at_type)):
-            if at_type[ii]=='H':
-                chtmp+=charge_grnd[ii]
+        for ii in range(len(at_type1)):
+            if at_type1[ii]=='H':
+                chtmp+=charge_grnd1[ii]
             else:
-                charge.append(charge_grnd[ii])
-                coor.append(coor_grnd[ii])
+                charge.append(charge_grnd1[ii])
+                coor.append(coor_grnd1[ii])
         charge=np.array(charge,dtype='f8')
         coor=np.array(coor,dtype='f8')
         charge+=chtmp/len(charge)
-        coor_grnd=np.copy(coor)
-        charge_grnd=np.copy(charge)
+        coor_grnd1=np.copy(coor)
+        charge_grnd1=np.copy(charge)
+        
+        chtmp=0.0
+        charge=[]
+        coor=[]
+        for ii in range(len(at_type2)):
+            if at_type2[ii]=='H':
+                chtmp+=charge_grnd2[ii]
+            else:
+                charge.append(charge_grnd2[ii])
+                coor.append(coor_grnd2[ii])
+        charge=np.array(charge,dtype='f8')
+        coor=np.array(coor,dtype='f8')
+        charge+=chtmp/len(charge)
+        coor_grnd2=np.copy(coor)
+        charge_grnd2=np.copy(charge)
 
         # excited state charges
         chtmp=0.0
         charge=[]
         coor=[]
-        for ii in range(len(at_type)):
-            if at_type[ii]=='H':
-                chtmp+=charge_exct[ii]
+        for ii in range(len(at_type1)):
+            if at_type1[ii]=='H':
+                chtmp+=charge_exct1[ii]
             else:
-                charge.append(charge_exct[ii])
-                coor.append(coor_exct[ii])
+                charge.append(charge_exct1[ii])
+                coor.append(coor_exct1[ii])
         charge=np.array(charge,dtype='f8')
         coor=np.array(coor,dtype='f8')
         charge+=chtmp/len(charge)
-        coor_exct=np.copy(coor)
-        charge_exct=np.copy(charge)
+        coor_exct1=np.copy(coor)
+        charge_exct1=np.copy(charge)
+        
+        chtmp=0.0
+        charge=[]
+        coor=[]
+        for ii in range(len(at_type2)):
+            if at_type2[ii]=='H':
+                chtmp+=charge_exct2[ii]
+            else:
+                charge.append(charge_exct2[ii])
+                coor.append(coor_exct2[ii])
+        charge=np.array(charge,dtype='f8')
+        coor=np.array(coor,dtype='f8')
+        charge+=chtmp/len(charge)
+        coor_exct2=np.copy(coor)
+        charge_exct2=np.copy(charge)
     
-    index1=identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
-    index2=identify_molecule(struc,struc_test,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index1=identify_molecule(struc,struc1_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+    index2=identify_molecule(struc,struc2_test,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
     if len(index1)!=len(np.unique(index1)) or len(index2)!=len(np.unique(index2)):
         raise IOError('There are repeating elements in index file')
 
@@ -408,13 +462,17 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     Elstat_Charge_grnd=np.copy(Elstat_Charge)
     Elstat_Charge_exct=np.copy(Elstat_Charge)
     for ii in range(len(index1)):
-        Elstat_Charge_grnd[index1[ii]]=charge_grnd[ii]
-        Elstat_Charge_exct[index1[ii]]=charge_exct[ii]
-        Elstat_Charge[index1[ii]]=charge_exct[ii]-charge_grnd[ii]
+        Elstat_Charge_grnd[index1[ii]]=charge_grnd1[ii]
+        Elstat_Charge_exct[index1[ii]]=charge_exct1[ii]
+        Elstat_Charge[index1[ii]]=charge_exct1[ii]-charge_grnd1[ii]
+    for ii in range(len(index2)):
+        Elstat_Charge_grnd[index2[ii]]=charge_grnd2[ii]
+        Elstat_Charge_exct[index2[ii]]=charge_exct2[ii]
+        Elstat_Charge[index2[ii]]=charge_exct2[ii]-charge_grnd2[ii]
     
     Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type)
     
-    return Elstat_mol,struc.at_type
+    return Elstat_mol,index1,index2,charge_grnd1,charge_grnd2
 
 #def _CalculateEshift(filenames,ShortName,index_all,Eshift_QCH,Eshift_all,FG_charges,AlphaE,Alpha_E,BetaE,nvec_all,order=82,ChargeType='qchem',verbose=False):
 #    ''' Calculates transition energy shift for molecule embeded in polarizable 
