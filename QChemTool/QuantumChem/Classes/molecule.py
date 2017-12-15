@@ -228,19 +228,24 @@ class Molecule:
                 self.mol_spec['ElDensGauss_exct']=np.copy(exct_dens)
     
     def load_Gaussian_density_fchk(self,filename,typ='Ground',exct_i=0):
-        ''' Reads electron density matrix from gaussian formated checkpoint file
-        and write it to self.mol_spec['ElDensGauss']
+        ''' Reads electron density matrix from gaussian formated checkpoint file.
+        For obtaining correct density matrixes for excited and transition
+        states Gaussian calculation has to be done with **DENSITY** keyword.
         
         Parameters
         ----------
         filename : string
             Name of fchk file including the path if needed
         typ : string (optional - init='Ground')
-            If `typ='Ground'` ground state density matrix will be written into
-            self.mol_spec['ElDensGauss']. If `typ='Excited'` excited state density
-            matrix will be written into self.mol_spec['ElDensGauss']. If 
-            `typ='ExcitedNoOpt'` nonoptimized excited state electron density matrix
-            will be written into self.mol_spec['ElDensGauss']. If 
+        
+            * ``typ='Ground'`` ground state density matrix will be written into
+              self.mo.densmat_grnd.
+            * ``typ='Excited'`` excited state density
+              matrix will be written into self.exct[exct_i].densmat_exct.
+            * ``typ='Transition'`` transition density matrix will be written
+              into self.exct[exct_i].densmat_trans.
+            * ``typ='ExcitedNoOpt'`` nonoptimized excited state electron 
+              density matrix will be written into self.exct[exct_i].densmat_exct
         
         Notes
         ---------
@@ -269,7 +274,9 @@ class Molecule:
                 self.exct[exct_i].densmat_exct=np.copy(exct_dens)
         elif typ=='Transition':
             if len(mo.densmat_grnd)!=0:
-                self.exct[exct_i].desnmat_trans=np.copy(mo.densmat_grnd)
+                self.exct[exct_i].densmat_trans=np.copy(mo.densmat_grnd)
+            else:
+                print("There is no transition density in the fchk file")
             
     def print_atom_info(self,ii):
         """
@@ -424,8 +431,8 @@ class Molecule:
                     except:
                         print("Excitation", ii,"doesn't have a excited state desnity matrix or it has not been defined yet")
                     try:
-                        desnmat_trans=self.exct[ii].desnmat_trans
-                        Excit_list[ii].desnmat_trans=desnmat_trans
+                        densmat_trans=self.exct[ii].densmat_trans
+                        Excit_list[ii].densmat_trans=densmat_trans
                     except:
                         print("Excitation", ii,"doesn't have a transition desnity matrix or it has not been defined yet")
                 self.exct=Excit_list
@@ -437,17 +444,17 @@ class Molecule:
                         except:
                             densmat_exct = None
                         try :
-                            desnmat_trans=self.exct[ii].desnmat_trans
+                            densmat_trans=self.exct[ii].densmat_trans
                         except:
-                            desnmat_trans=None
+                            densmat_trans=None
     
                         excit=Excit_list[ii]
                         self.exct[ii]=excit
                         
                         if densmat_exct is not None:
                             self.exct[ii].densmat_exct=densmat_exct
-                        if desnmat_trans is not None:
-                            self.exct[ii].desnmat_trans=desnmat_trans
+                        if densmat_trans is not None:
+                            self.exct[ii].densmat_trans=densmat_trans
                     elif add_excit:
                         excit=Excit_list[ii]
                         self.exct.append(excit)
@@ -1053,13 +1060,13 @@ class Molecule:
                 print('            ',self.mo.densmat_grnd[ii,:ii+1])
         
 #self.exct[exct_i].densmat_exct
-#self.exct[exct_i].desnmat_trans
+#self.exct[exct_i].densmat_trans
         if not do_ground_state:
             exct_i=state_indx-1
             # Excited state coef matrix is given by M_mat=sum_{a->j} sum_{n=1,Nocc/2 where a->j} 2* C^{2}_{a,j} *C_{n,mu} *C_{n,nu}
             if self.exct[exct_i].densmat_exct is None:
                 raise IOError('Calculation of excited state electron density is not implemented due to errors in its calculation')
-            if self.exct[exct_i].desnmat_trans is None:
+            if self.exct[exct_i].densmat_trans is None:
                 raise IOError('Calculation of transition state electron density is not implemented due to errors in its calculation')
             
             
@@ -1070,13 +1077,13 @@ class Molecule:
                 print(" ")
                 print('        First four lines of lower triangle of transition density matrix:')
                 for ii in range(4):
-                    print('            ',self.exct[exct_i].desnmat_trans[ii,:ii+1])
+                    print('            ',self.exct[exct_i].densmat_trans[ii,:ii+1])
                 print(" ")
                    
                     
         M_mat_grd = np.copy(self.mo.densmat_grnd)
         if not do_ground_state:
-            M_mat_tran = np.copy(self.exct[exct_i].desnmat_trans)
+            M_mat_tran = np.copy(self.exct[exct_i].densmat_trans)
             M_mat_exct = np.copy(self.exct[exct_i].densmat_exct)
         
         if (load_grid is None) and (grid is None):

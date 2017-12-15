@@ -5,4 +5,7 @@ cmake ..
 make
 
 cd ../../../
-export PYTHONPATH=$PWD/pyscf:$PYTHONPATH
+export PYTHONPATH=$PWD"/QChemTool":$PYTHONPATH
+echo ' ' >> ~/.bashrc
+echo '# pyscf path:' >> ~/.bashrc
+echo 'export PYTHONPATH='$PWD'/QChemTool:$PYTHONPATH' >> ~/.bashrc

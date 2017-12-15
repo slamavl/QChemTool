@@ -202,7 +202,7 @@ class MO:
         
         """
         
-        if AO.overlap in None:
+        if AO.overlap is None:
             AO.get_overlap()
 
         MOnorm=np.zeros(self.nmo,dtype='f8')

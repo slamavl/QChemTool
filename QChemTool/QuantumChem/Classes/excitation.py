@@ -67,9 +67,9 @@ class Excitation:
     esp_trans : numpy array of float (dimension Natom)
         Transition atomic charges obtained from fitting of transition 
         electrostatic potential.
-    desnmat_trans : numpy array of float (dimension Nao_orient x Nao_orient)
+    densmat_trans : numpy array of float (dimension Nao_orient x Nao_orient)
         Transition electron density matrix in atomic orbitals. Defined as:
-        ``desnmat_trans[mu,nu]=sum_{i->j}{c_{i->j}*c_{i,mu}*c_{j,nu}``
+        ``densmat_trans[mu,nu]=sum_{i->j}{c_{i->j}*c_{i,mu}*c_{j,nu}``
         where ``c_{i->j}`` are expansion coefficients of electronic transition 
         into transition between molecular orbitals and ``c_{i,mu}`` are expansion
         coefficients of molecular orbital i into atomic orbital basis (atomic
@@ -153,7 +153,7 @@ class Excitation:
         self.tr_quadrR2=None
         self.esp_exct=None
         self.esp_trans=None
-        self.desnmat_trans=None
+        self.densmat_trans=None
         self.densmat_exct=None
         self.dens_exct=None
         self.dens_trans=None
@@ -180,8 +180,8 @@ class Excitation:
         
         """
         TransfMat=AO._get_ao_rot_mat(rotxy,rotxz,rotyz)
-        if self.desnmat_trans is not None:
-            self.desnmat_trans=np.dot(TransfMat,np.dot(self.desnmat_trans,TransfMat.T))
+        if self.densmat_trans is not None:
+            self.densmat_trans=np.dot(TransfMat,np.dot(self.densmat_trans,TransfMat.T))
         if self.densmat_exct is not None:
             self.densmat_exct=np.dot(TransfMat,np.dot(self.densmat_exct,TransfMat.T))
         if self.dens_exct is not None:
@@ -215,8 +215,8 @@ class Excitation:
             
         """
         TransfMat=AO._get_ao_rot_mat_1(rotxy,rotxz,rotyz)
-        if self.desnmat_trans is not None:
-            self.desnmat_trans=np.dot(TransfMat,np.dot(self.desnmat_trans,TransfMat.T))
+        if self.densmat_trans is not None:
+            self.densmat_trans=np.dot(TransfMat,np.dot(self.densmat_trans,TransfMat.T))
         if self.densmat_exct is not None:
             self.densmat_exct=np.dot(TransfMat,np.dot(self.densmat_exct,TransfMat.T))
         if self.dens_exct is not None:
@@ -259,7 +259,7 @@ class Excitation:
         Definition
         ----------
         Transition density matrix is defined as:
-        ``desnmat_trans[mu,nu]=sum_{i->j}{c_{i->j}*c_{i,mu}*c_{j,nu}``
+        ``densmat_trans[mu,nu]=sum_{i->j}{c_{i->j}*c_{i,mu}*c_{j,nu}``
         where ``c_{i->j}`` are expansion coefficients of electronic transition 
         into transition between molecular orbitals and ``c_{i,mu}`` are expansion
         coefficients of molecular orbital i into atomic orbital basis (atomic
@@ -268,7 +268,7 @@ class Excitation:
         Notes
         ---------
         Transition density matrix is stored at: \n
-        **self.desnmat_trans** \n
+        **self.densmat_trans** \n
         as numpy array of float (dimension Nao_orient x Nao_orient)
         
         """ 
@@ -289,7 +289,7 @@ class Excitation:
             Cj_mat,Ci_mat = np.meshgrid(MO.coeff[mo_j],MO.coeff[mo_i])
             M_mat+=np.multiply(factor*coef,np.multiply(Ci_mat,Cj_mat))
         
-        self.desnmat_trans=np.copy(M_mat)
+        self.densmat_trans=np.copy(M_mat)
     
     def get_transition_atomic_charges(self,AO,MO=None,verbose=False):
         """Calculate transition atomic charges for multipole expansion in 
@@ -332,11 +332,11 @@ class Excitation:
         if AO.overlap is None:
             AO.get_overlap()
             
-        if self.desnmat_trans is None:
+        if self.densmat_trans is None:
             self.get_tr_densmat(MO)
         
         Nat=max([AO.atom[ii].indx for ii in range(AO.nao)])+1
-        TrCh_Mat=np.dot(self.desnmat_trans,AO.overlap)
+        TrCh_Mat=np.dot(self.densmat_trans,AO.overlap)
         # same as: TrCh_Mat=np.dot(self.exct_spec[exct_i]['coeff_mat'].T,self.ao.overlap)
         if verbose:
             print('Sum of atomic charges:',np.trace(TrCh_Mat))
@@ -404,11 +404,11 @@ class Excitation:
             AO.get_dipole_matrix()
         if self.tr_char is None:
             self.get_transition_atomic_charges(AO,MO)  
-        if self.desnmat_trans is None:
+        if self.densmat_trans is None:
             self.get_tr_densmat(MO) 
         
         Nat=max([AO.atom[ii].indx for ii in range(AO.nao)])+1
-        M_mat=np.copy(self.desnmat_trans)
+        M_mat=np.copy(self.densmat_trans)
         dipole=np.zeros(3,dtype='f8')
             
         DD_X=np.zeros((AO.nao_orient,AO.nao_orient),dtype='f8')
@@ -507,14 +507,14 @@ class Excitation:
         
         if AO.quadrupole is None:
             AO.get_quadrupole()
-        if self.desnmat_trans is None:
+        if self.densmat_trans is None:
             self.get_tr_densmat(MO)
         
         Nat=max([AO.atom[ii].indx for ii in range(AO.nao)])+1
         # Everything is ready for calculation of atomic transition quadrupoles
         Quad_Mat=np.zeros((len(AO.quadrupole[0]),len(AO.quadrupole[0])),dtype='f8')
         Quad_Mat=AO.quadrupole[0]+AO.quadrupole[3]+AO.quadrupole[5]
-        Quad_Mat=np.dot(Quad_Mat,(self.desnmat_trans).T)
+        Quad_Mat=np.dot(Quad_Mat,(self.densmat_trans).T)
         
         Quad_r2=np.zeros(Nat,dtype='f8')
         counter=0
@@ -531,7 +531,7 @@ class Excitation:
         for kk in range(6):
             Quad_Mat=np.zeros((len(AO.quadrupole[kk]),len(AO.quadrupole[kk])),dtype='f8')
             Quad_Mat=np.copy(AO.quadrupole[kk])
-            Quad_Mat=np.dot(Quad_Mat,(self.desnmat_trans).T)
+            Quad_Mat=np.dot(Quad_Mat,(self.densmat_trans).T)
             counter=0
             for ii in range(AO.nao):
                 for jj in range(len(AO.orient[ii])):
@@ -664,12 +664,12 @@ class Excitation:
                     mo_j_old=mo_j
                     print(counter," transitions calculated")
         else:
-            if self.desnmat_trans is None:
+            if self.densmat_trans is None:
                 if MO is None:
                     raise IOError('For calculation of transition matrix in transition density calculation you need to imput MO information')
                 else:
                     self.get_tr_densmat(MO)
-            M_mat=self.desnmat_trans
+            M_mat=self.densmat_trans
             
             # calculation of transition density                
             start_time = timeit.default_timer()
