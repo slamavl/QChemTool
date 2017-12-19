@@ -212,20 +212,21 @@ class Structure(PositionUnitsManaged):
                 for ii in range(len(at_type)):
                     mass.append(get_mass(at_type[ii]))
                 self.mass=np.append(self.mass,mass)
+            self.bonds=None
                 
     def add_atom(self,coor,at_type,ncharge=None,mass=None):
         if self.ncharge is not None:
-            if len(self.ncharge)==self.nat and ncharge is None:
-                raise Warning('For every atom there are defined nuclear charges. In odred to be consistent you have to specify them for new atoms')
-                return
+#            if len(self.ncharge)==self.nat and ncharge is None:
+#                raise Warning('For every atom there are defined nuclear charges. In odred to be consistent you have to specify them for new atoms')
+#                return
             if len(self.ncharge)!=self.nat: 
                 raise Warning('There are not specified nuclear charges for all atoms. Set these charges before you add new atoms')
                 return
-        if self.mass is not None:
-            if len(self.mass)==self.nat and mass is None:
-                raise Warning('For every atom there is defined nuclear mass. In odred to be consistent you have to specify it for new atoms')
-                return
-        elif mass is not None:
+#        if self.mass is not None:
+#            if len(self.mass)==self.nat and mass is None:
+#                raise Warning('For every atom there is defined nuclear mass. In odred to be consistent you have to specify it for new atoms')
+#                return
+        if mass is not None:
             if len(self.mass)!=self.nat: 
                 raise Warning('There is not specified nuclear mass for all atoms. Set the mass for all atoms before you add new ones')
                 return
@@ -251,6 +252,7 @@ class Structure(PositionUnitsManaged):
         else:
             ncharge=get_atom_indx(at_type)
             self.ncharge=np.append(self.ncharge,ncharge)
+        self.bonds=None
 
     def get_com(self):
         """ Outputs center of mass in as coordinate class
@@ -938,15 +940,23 @@ class Structure(PositionUnitsManaged):
             raise IOError('Only list of indexes is supported in delete_by_indx')
         new_struc=deepcopy(self)
         indx_sorted=sorted(indx)
+        mask=np.ones(new_struc.nat,dtype='bool')
+        mask[indx_sorted] = False
+        if new_struc.ncharge is not None:
+            new_struc.ncharge = new_struc.ncharge[mask]
+        if new_struc.mass is not None:
+            new_struc.mass = new_struc.mass[mask]
         for ii in reversed(indx_sorted):
             if new_struc.at_type is not None:
                 del(new_struc.at_type[ii])
             if new_struc.coor is not None:
                 new_struc.coor.del_coor(ii)
-            if self.ncharge is not None:
-                del(new_struc.ncharge[ii])
-            if self.mass is not None:
-                del(new_struc.mass[ii])
+#            if new_struc.ncharge is not None:
+#                print(ii,new_struc.ncharge.shape,new_struc.ncharge[ii],new_struc.ncharge.__class__)
+#                np.delete(new_struc.ncharge,ii)
+#                print(ii,new_struc.ncharge.shape,new_struc.ncharge[ii],new_struc.ncharge.__class__)
+#            if self.mass is not None:
+#                np.delete(new_struc.mass,ii)
             if self.vdw_rad is not None:
                 del(new_struc._vdw_rad[ii])
             if self.ff_type is not None:
