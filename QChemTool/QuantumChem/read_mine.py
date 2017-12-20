@@ -1325,6 +1325,13 @@ def read_gaussian_gjf(filename,verbose=True):
     filename : str
         Specifies the filename for the input gaussian log file (including the
         path if needed)
+    
+    Returns
+    ---------
+    Coor : numpy array of real (dimension Natoms x 3)
+        Coordinates of every atom in the system in ANGSTROMS
+    AtType : list of string
+        Atom types for every atom in the system e.g. ['C','F','H','C',...]
       
     Notes
     ----------

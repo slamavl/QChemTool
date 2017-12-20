@@ -255,7 +255,7 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     
     Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type) 
     
-    return Elstat_mol,struc.at_type
+    return Elstat_mol,index1,charge_grnd
 
 def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False):
     ''' Read all informations needed for Electrostatics class and transform system
