@@ -13,7 +13,7 @@ import networkx as nx
 from os import path
 
 
-from ..read_mine import read_xyz, read_VMD_pdb, read_mol2
+from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf
 from ..read_mine import read_TrEsp_charges as read_TrEsp
 from .general import Coordinate,Grid 
 from ...General.UnitsManager import position_units,PositionUnitsManaged,energy_units
@@ -594,6 +594,36 @@ class Structure(PositionUnitsManaged):
         Aditional_info=AditionalInfo[5]
 
         return Name,Charge_method,Aditional_info
+    
+    def load_gjf(self,filename):
+        """ Loads all structure information from Gaussian gjf input file.
+        If the structure is allready initialized it adds the molecule to the
+        structure instead of rewriting the existing information.
+        
+        Parameters
+        -----------
+        filename : string
+            Name of the input file including the path if needed
+        """
+        
+        Geom,at_type=read_gaussian_gjf(filename,verbose=False)
+#        at_type=[]
+#        for ii in charge:
+#            at_type.append(get_atom_symbol(ii))
+        with position_units('Angstrom'):
+            if not self.init:
+                self.coor=Coordinate(Geom)
+                self.at_type=at_type.copy()
+                self.nat=len(self.at_type)
+                self.ncharge=np.zeros(self.nat,dtype='i4')
+                for ii in range(self.nat):
+                    self.ncharge[ii]=get_atom_indx(at_type[ii])
+                self.mass=np.zeros(self.nat,dtype='f8')
+                for ii in range(self.nat):
+                    self.mass[ii]=get_mass(at_type[ii])
+                self.init=True
+            else:
+                self.add_coor(np.array(Geom),at_type)
 
 
     def read_TrEsp_charges(self,filename,state='Ground',verbose=True):
