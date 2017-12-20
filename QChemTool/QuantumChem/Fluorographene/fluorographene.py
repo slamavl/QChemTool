@@ -78,6 +78,30 @@ def deleteFG(struc,add_hydrogen=False,Hdist=2.0031,Fragmentize=False):
         return new_struc
 
 def constrainsFG(struc,border=True,defect=False):
+    """ Output indexes of atoms to be frozen during geometry optimization for 
+    fluorographene systems
+    
+    Parameters
+    ----------
+    struc : Structure class
+        Contains information about structure of fluorographen sheet with defects
+    border : logical (optional init = True)
+        Specify if border carbon atoms (of fluorographene sheet) should be
+        frozen or not (if should be included to constrain indexes)
+    defect : logical (optional init = False)
+        Specify if defect carbons (the one without fluorines) should be frozen
+         or not (if should be included to constrain indexes). Usefull for 
+         example for geometry optimization of single defect in geometry from
+         two defect structure.
+         
+    Returns
+    -------
+    constrain_indx : list of integer (dimension Nconstrain)
+        Indexes of atoms which should be frozen during geometry optimization
+        (starting from 0).
+    
+    """
+    
     if struc.bonds is None:
         struc.guess_bonds()
     
