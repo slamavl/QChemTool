@@ -2685,7 +2685,7 @@ def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,Vin
 
 #TODO: Get rid of ShortName
 #TODO: Input vacuum transition energies
-def Calc_Heterodimeir_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,**kwargs):
+def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,**kwargs):
     ''' Calculate interaction energies between defects embeded in polarizable atom
     environment for all systems given in filenames. Possibility of calculate 
     transition energy shifts and transition dipoles.
