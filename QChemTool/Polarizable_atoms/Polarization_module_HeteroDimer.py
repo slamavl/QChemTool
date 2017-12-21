@@ -99,7 +99,7 @@ class Dielectric:
             polar['BetaEE'][ii,:,:]=PolValues[pol_type[ii]][2]
         return polar
     
-    def swap_atoms(self,index1,index2):
+    def _swap_atoms(self,index1,index2):
         ''' Function which exchange polarization properties between atoms defined
         by index1 and atoms defined by index 2 
         
@@ -188,7 +188,7 @@ class Dielectric:
             from ..General.Potential import ElField_dipole
             # Test first order induced dipoles            
             self.dipole=np.zeros((self.Nat,3),dtype='f8')
-            self.calc_dipoles_All('AlphaE',NN=1)
+            self._calc_dipoles_All('AlphaE',NN=1)
             if np.allclose(P,self.dipole):
                 print('First order dipoles are the same.')
             else:
@@ -316,7 +316,7 @@ class Dielectric:
         ----------
         For calculation of derivation of ApA use `_dR_BpA(index1,index1,charge,typ,eps=1)`
         where charges in molecule Dielectric class have to be nonzero for defect with
-        index1. If not first swap the the defects with `swap_atoms(index1,index2)`
+        index1. If not first swap the the defects with `_swap_atoms(index1,index2)`
         and than use as described earlier. The same is true for the second defect,
         where you only replace index1 for index2.
         '''
@@ -374,7 +374,7 @@ class Dielectric:
                     res[ii,:]+=charge[jj]*np.dot(T[index2[jj],ii,:,:],P[ii,:])
         
         # swap porarization parameters from defect A to defect B
-        self.swap_atoms(index1,index2)
+        self._swap_atoms(index1,index2)
         
         # calculating derivation according to atom displacement from defect A
         Q=np.meshgrid(self.charge,self.charge)[0]   # in columns same charges
@@ -404,7 +404,7 @@ class Dielectric:
                     res[ii,:]+=charge[jj]*np.dot(T[index1[jj],ii,:,:],P[ii,:])
 
         # swap porarization parameters back to original position
-        self.swap_atoms(index1,index2)
+        self._swap_atoms(index1,index2)
         
         
         return res.reshape(3*self.Nat)
@@ -509,7 +509,7 @@ class Dielectric:
         # + contribution from S tensor
         
         # swap porarization parameters from defect A to defect B
-        self.swap_atoms(index1,index2)
+        self._swap_atoms(index1,index2)
         
         # calculating derivation according to atom displacement from defect A
         Q=np.meshgrid(self.charge,self.charge)[0]   # in columns same charges
@@ -552,13 +552,13 @@ class Dielectric:
                     res[nn,:]+=3*PA[nn,ii]*np.dot(S[nn,:,ii,:,kk].T,PB[:,kk])
                     
         # swap porarization parameters back to original position
-        self.swap_atoms(index1,index2)
+        self._swap_atoms(index1,index2)
         
         
         return res.reshape(3*self.Nat)
         
     
-    def calc_dipoles_All(self,typ,Estatic=np.zeros(3,dtype='f8'),NN=60,eps=1,debug=False):
+    def _calc_dipoles_All(self,typ,Estatic=np.zeros(3,dtype='f8'),NN=60,eps=1,debug=False):
         ''' Function for calculation induced dipoles of SCF procedure for interaction
         of molecule with environment. It calculates induced dipoles on individual
         atoms by static charge distribution and homogeneous electric field.
@@ -678,7 +678,7 @@ class Dielectric:
             print('Time for filling coordinate matrix vs all the rest:',(time01-time0)/(time1-time01))
                 
             
-    def get_interaction_energy(self,index,charge=None,debug=False):
+    def _get_interaction_energy(self,index,charge=None,debug=False):
         ''' Function calculates interaction energy between atoms defined in index
         and the rest of the atoms 
 
@@ -794,7 +794,41 @@ class Dielectric:
         return InterE
     
     
-    def fill_Polar_matrix(self,index1,index2,typ='AlphaE',order=80,debug=False):
+    def _fill_Polar_matrix(self,index1,index2,typ='AlphaE',order=80,debug=False):
+        """ Calculate polarization matrix representation for interaction energy
+        calculation.
+        
+        Parameters
+        ---------
+        index1 : list of integer (dimension Natoms_defect1)
+            Indexes of all atoms from the first defect (starting from 0)
+        index2 : list of integer (dimension Natoms_defect2)
+            Indexes of all atoms from the second defect (starting from 0)
+        typ : string (optional init = 'AlphaE')
+            Which polarizability should be used for calculation of induced 
+            dipoles. Supported types are: ``'AlphaE'``, ``'Alpha_E'`` and
+            ``'BetaEE'``
+        order : integer (optional - init=80)
+            Specify how many SCF steps shoudl be used in calculation  of induced
+            dipoles - according to the used model it should be 2
+        
+        Returns
+        -------
+        PolMAT : numpy array of float (dimension 2x2)
+            Polarizability matrix representation. For ``typ='AlphaE'`` or 
+            ``typ='BetaEE': PolMAT[0,0] = -E(1)*induced_dipole(1),
+            PolMAT[0,1] = PolMAT[1,0] = -E(1)*induced_dipole(2) and
+            PolMAT[1,1] = -E(2)*induced_dipole(2). For ``typ='Alpha_E'`` 
+            diagonal elements are swapped: PolMAT[0,0] = -E(2)*induced_dipole(2),
+            PolMAT[0,1] = PolMAT[1,0] = -E(1)*induced_dipole(2) and
+            PolMAT[1,1] = -E(1)*induced_dipole(1)
+        dipolesA : numpy array of float (dimension 3)
+            Total induced dipole moment in the environment by the first defect.
+        dipolesB : numpy array of float (dimension 3)
+            Total induced dipole moment in the environment by the second defect.
+        
+        """
+        
         if typ=='BetaEE' and order>1:
             raise IOError('For calculation with beta polarization maximal order is 1')
         elif typ=='BetaEE' and order<1:
@@ -813,23 +847,23 @@ class Dielectric:
         
         # Polarization by molecule B
         self.charge[defA_indx]=0.0
-        self.calc_dipoles_All(typ,NN=order,eps=1,debug=False)
+        self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
         dipolesB=np.sum(self.dipole,axis=0)
         self.charge[defA_indx]=defA_charge
-        PolMAT[1,1] = self.get_interaction_energy(defB_indx,charge=defB_charge,debug=False) - E_TrEsp
-        PolMAT[0,1] = self.get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
+        PolMAT[1,1] = self._get_interaction_energy(defB_indx,charge=defB_charge,debug=False) - E_TrEsp
+        PolMAT[0,1] = self._get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
         PolMAT[1,0] = PolMAT[0,1]
         self.dipole=np.zeros((self.Nat,3),dtype='f8')
         
         # Polarization by molecule A
         self.charge[defB_indx]=0.0
-        self.calc_dipoles_All(typ,NN=order,eps=1,debug=False)
+        self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
         dipolesA=np.sum(self.dipole,axis=0)
         self.charge[defB_indx]=defB_charge
-        PolMAT[0,0] = self.get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
+        PolMAT[0,0] = self._get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
         if debug:
             print(PolMAT*conversion_facs_energy["1/cm"])
-            if np.isclose(self.get_interaction_energy(defB_indx,charge=defB_charge,debug=False)-E_TrEsp,PolMAT[1,0]):
+            if np.isclose(self._get_interaction_energy(defB_indx,charge=defB_charge,debug=False)-E_TrEsp,PolMAT[1,0]):
                 print('ApB = BpA')
             else:
                 raise Warning('ApB != BpA')
@@ -845,6 +879,24 @@ class Dielectric:
             return PolMAT,dipolesA,dipolesB
     
     def get_TrEsp_Eng(self, index1, index2):
+        """ Calculate TrEsp interaction energy for defects (defect-like 
+        molecules) in vacuum.
+        
+        Parameters
+        --------
+        index1 : list of integer (dimension Natoms_defect1)
+            Indexes of all atoms from the first defect (starting from 0)
+        index2 : list of integer (dimension Natoms_defect2)
+            Indexes of all atoms from the second defect (starting from 0)
+            
+        Returns
+        --------
+        E_TrEsp : float
+            TrEsp interaction energy in ATOMIC UNITS (Hartree) between defect 
+            in vacuum.
+        
+        """
+        
         defA_coor = self.coor[index1]
         defB_coor = self.coor[index2]
         defA_charge = self.charge[index1] 
@@ -854,6 +906,23 @@ class Dielectric:
         return E_TrEsp # in hartree
     
     def get_TrEsp_Dipole(self, index):
+        """ Calculate vacuum transition dipole moment for single defect (from
+        TrEsp charges).
+        
+        Parameters
+        ----------
+        index : list of integer (dimension Natoms_defect)
+            Indexes of all atoms from the defect (starting from 0) of which 
+            transition dipole is calculated
+            
+        Returns
+        --------
+        Dip_TrEsp : numpy array of float (dimension 3)
+            Transition dipole in ATOMIC UNITS for specified defect (by index) 
+            calculated from TrEsp charges
+            
+        """
+        
         def_coor = self.coor[index]
         def_charge = self.charge[index] 
         
@@ -862,59 +931,40 @@ class Dielectric:
         return Dip_TrEsp # in AU
     
     def get_SingleDefectProperties(self, index, dAVA=0.0, order=80, approx=1.1):
-        '''
-        
-        dAVA = <A|V|A> - <G|V|G>
+        ''' Calculate effects of environment such as transition energy shift
+        and transition dipole change for single defect.
         
         Parameters
         ----------
-        *args : real (optional)
-            Diference in electrostatic interaction energy between ground and 
-            excited state in ATOMIC UNITS (DE). If not defined it is assumed to 
-            be zero. DE=<A|V|A>-<G|V|G>
-        output_dipoles : logical (optional - init=False)
-            If atomic dipoles should be outputed or not. Atomic dipoles are 
-            outputed as `AtDip_Alpha(E)+AtDip_Alpha(-E)-self.VinterFG*AtDip_Beta(E,E)
-        order : integer (optional - init=80)
-            Specify how many SCF steps shoudl be used in calculation  of induced dipoles
-        approx : real (optional - init=1.2)
+        index : list of integer (dimension Natoms_defect)
+            Indexes of all atoms from the defect (starting from 0) for which
+            transition energy and transition dipole is calculated
+        dAVA : float
+            **dAVA = <A|V|A> - <G|V|G>** Difference in electrostatic 
+            interaction energy between defect and environment for defect in 
+            excited state <A|V|A> and in ground state <G|V|G>.
+        order : integer (optional - init = 80)
+            Specify how many SCF steps shoudl be used in calculation  of induced
+            dipoles - according to the used model it should be 2
+        approx : real (optional - init=1.1)
             Specifies which approximation should be used.
             
-            **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)`.
-            With this approximation diference in electrostatic interaction energy
-            between ground and excited state in ATOMIC UNITS (DE) has to be imputed
-            as `*args`
-            
-            **Approximation 1.1.2**: Approximation 1.1 + neglecting difference
-            in electrostatic interaction between ground and excited state
-            (imputed as approximation 1.1 but no electrostatic interaction energy
-            diference - DE is defiend)
-                
-            **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
-            With this apprximation diference in electrostatic interaction energy
-            between ground and excited state in ATOMIC UNITS (DE) has to be imputed
-            as `*args`
-            
-            **Approximation 1.2.2**:  Approximation 1.2 + neglecting difference
-            in electrostatic interaction between ground and excited state
-            (imputed as approximation 1.2 but no electrostatic interaction energy
-            diference - DE is defiend)
-            
-            **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
-            `Alpha(E)=Alpha(-E)`, however the second one is not condition
-            
-            **Approximation MMpol**: Dipole will be calculated as a original dipole
-            plus full polarization of the environmnet.
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
 
         Returns
         -------
-        dipole : numpy.array of real (dimension 3)
-            Transition dipole including the effects from interaction with environment
-            in ATOMIC UNITS (e*Bohr)
-        AtDipoles : numpy.array of real (dimension Natoms x 3) (optional)
-            Induced atomic dipoles defined as: 
-            `AtDip_Alpha(E)+AtDip_Alpha(-E)-self.VinterFG*AtDip_Beta(E,E)
-            in ATOMIC UNITS (e*Bohr)
+        Eshift : Energy class
+            Transition energy shift for the defect due to the fluorographene
+            environment calculated from structure with single defect. Units are
+            energy managed
+        TrDip : numpy array of real (dimension 3)
+            Total transition dipole for the defect with environment effects 
+            included calculated from structure with single defect (in ATOMIC 
+            UNITS)
         
         **Neglecting `tilde{Beta(E)}` is not valid approximation. It shoudl be
         better to neglect Beta(E,-E) to be consistent with approximation for 
@@ -928,12 +978,8 @@ class Dielectric:
         
         **Approximation 1.1:**
             dip_fin = dip - (Vinter-DE)*Beta(E,E)*El_field_TrCharge + dip_init(1-1/4*Ind_dip_Beta(E,E)*El_field_TrCharge)
-        **Approximation 1.1.2:**
-            dip_fin = dip - Vinter*Beta(E,E)*El_field_TrCharge + dip_init(1-1/4*Ind_dip_Beta(E,E)*El_field_TrCharge)
         **Approximation 1.2:**
             dip_fin = dip - (Vinter-DE)*Beta(E,E)*El_field_TrCharge + dip_init     
-        **Approximation 1.2.2:**
-            dip_fin = dip - Vinter*Beta(E,E)*El_field_TrCharge + dip_init
         **Approximation 1.3:**
             dip_fin = dip - 2*Vinter*Beta(E,E)*El_field_TrCharge + dip_init
         
@@ -947,17 +993,17 @@ class Dielectric:
         # Calculate polarization matrixes
         # TODO: Shift this block to separate function
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
-        self.calc_dipoles_All('AlphaE',NN=order,eps=1,debug=False)
+        self._calc_dipoles_All('AlphaE',NN=order,eps=1,debug=False)
         dip_AlphaE = np.sum(self.dipole,axis=0)
-        Polar_AlphaE = self.get_interaction_energy(index,charge=charge,debug=False)
+        Polar_AlphaE = self._get_interaction_energy(index,charge=charge,debug=False)
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
-        self.calc_dipoles_All('Alpha_E',NN=order,eps=1,debug=False)
+        self._calc_dipoles_All('Alpha_E',NN=order,eps=1,debug=False)
         dip_Alpha_E = np.sum(self.dipole,axis=0)
-        Polar_Alpha_E = self.get_interaction_energy(index,charge=charge,debug=False)
+        Polar_Alpha_E = self._get_interaction_energy(index,charge=charge,debug=False)
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
-        self.calc_dipoles_All('BetaEE',NN=order//2,eps=1,debug=False)
+        self._calc_dipoles_All('BetaEE',NN=order//2,eps=1,debug=False)
         dip_Beta = np.sum(self.dipole,axis=0)
-        Polar_Beta = self.get_interaction_energy(index,charge=charge,debug=False)
+        Polar_Beta = self._get_interaction_energy(index,charge=charge,debug=False)
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
         
         if approx==1.1:
@@ -978,19 +1024,68 @@ class Dielectric:
         
     
     def get_HeterodimerProperties(self, index1, index2, Eng1, Eng2, dAVA=0.0, dBVB=0.0, order=80, approx=1.1):
-        '''
+        ''' Calculate effects of the environment for structure with two different
+        defects such as interaction energy, site transition energy shifts and 
+        changes in transition dipoles
+
+        Parameters
+        ----------
+        index1 : list of integer (dimension Natoms_defect1)
+            Indexes of all atoms from the first defect (starting from 0)
+        index2 : list of integer (dimension Natoms_defect2)
+            Indexes of all atoms from the second defect (starting from 0)
+        Eng1 : float 
+            Vacuum transition energy of the first defect in ATOMIC UNITS (Hartree)
+        Eng2 : float 
+            Vacuum transition energy of the second defect in ATOMIC UNITS (Hartree)
+        dAVA : float
+            **dAVA = <A|V|A> - <G|V|G>** Difference in electrostatic 
+            interaction energy between first defect the and environment for the 
+            defect in excited state <A|V|A> and in ground state <G|V|G>.
+        dBVB : float
+            **dBVB = <B|V|B> - <G|V|G>** Difference in electrostatic 
+            interaction energy between second defect and the environment for the 
+            defect in excited state <B|V|B> and in ground state <G|V|G>.
+        order : integer (optional - init = 80)
+            Specify how many SCF steps shoudl be used in calculation of induced
+            dipoles - according to the used model it should be 2
+        approx : real (optional - init=1.1)
+            Specifies which approximation should be used.
+            
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
         
-        dAVA = <A|V|A> - <G|V|G>
-        dBVB = <B|V|B> - <G|V|G>
+        Returns
+        -------
+        J_inter : Energy class
+            Interaction energy with effects of environment included. Units are 
+            energy managed
+        Eshift1 : Energy class
+            Transition energy shift for the first defect due to fluorographene
+            environment calculated from heterodymer structure. Units are energy
+            managed
+        Eshift2 : Energy class
+            Transition energy shift for the second defect due to fluorographene
+            environment calculated from heterodymer structure. Units are energy
+            managed
+        TrDip1 : numpy array of real (dimension 3)
+            Total transition dipole for the first defect with environment effects 
+            included calculated from heterodimer structure (in ATOMIC UNITS)
+        TrDip2 : numpy array of real (dimension 3)
+            Total transition dipole for the first defect with environment effects 
+            included calculated from heterodimer structure (in ATOMIC UNITS)
         '''
 
         # Get TrEsp interaction energy
         E_TrEsp = self.get_TrEsp_Eng(index1, index2)
         
         # Calculate polarization matrixes
-        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2 = self.fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
-        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2 = self.fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
-        PolarMat_Beta, dip_Beta1, dip_Beta2 = self.fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)     
+        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2 = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
+        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2 = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
+        PolarMat_Beta, dip_Beta1, dip_Beta2 = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)     
         
         # calculate new eigenstates and energies
         HH=np.zeros((2,2),dtype='f8')
@@ -1163,9 +1258,9 @@ class Dielectric:
 #        PolarMat=np.zeros((2,2),dtype='f8')
 #        if approx==1.1:
 #            # Fill polarization matrix
-#            PolarMat += self.fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
-#            PolarMat += self.fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
-#            BetaMat = self.fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)
+#            PolarMat += self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
+#            PolarMat += self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
+#            BetaMat = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)
 #            PolarMat += BetaMat*(dAVA/2 + dBVB/2 - self.VinterFG)
 #            
 #            # Calculate interaction energies
@@ -1287,7 +1382,7 @@ class Dielectric:
 #        self.dipole=np.zeros((self.Nat,3),dtype='f8')        
 #            
 #        # calculate induced dipoles with polarizability AlphaE for rescaled charges
-#        self.calc_dipoles_All('AlphaE',NN=order)
+#        self._calc_dipoles_All('AlphaE',NN=order)
 #        AtDipoles1=np.copy(self.dipole)
 #        
 #        # reset iduced dipoles to zero        
@@ -1300,7 +1395,7 @@ class Dielectric:
 #            self.dipole=np.zeros((self.Nat,3),dtype='f8')
 #            
 #            # calculate induced dipoles with polarizability Alpha_E for rescaled charges
-#            self.calc_dipoles_All('Alpha_E',NN=order)
+#            self._calc_dipoles_All('Alpha_E',NN=order)
 #            AtDipoles2=np.copy(self.dipole)
 #            
 #            # reset iduced dipoles to zero        
@@ -1313,11 +1408,11 @@ class Dielectric:
 #                AtDipoles2=AtDipoles2/2
 #            
 #            # calculate induced dipoles with polarizability Beta for rescaled charges
-#            #self.calc_dipoles_All('BetaEE',NN=order//2)
+#            #self._calc_dipoles_All('BetaEE',NN=order//2)
 #            if order>2:
-#                self.calc_dipoles_All('BetaEE',NN=1)
+#                self._calc_dipoles_All('BetaEE',NN=1)
 #            else:
-#                self.calc_dipoles_All('BetaEE',NN=order//2)
+#                self._calc_dipoles_All('BetaEE',NN=order//2)
 #            AtDipolesBeta=np.copy(self.dipole)
 #        
 #        # calculate transition dipole:
@@ -1462,12 +1557,12 @@ class Dielectric:
 #        self.dipole=np.zeros((self.Nat,3),dtype='f8')            
 #            
 #        # calculate induced dipoles with polarizability AlphaE for rescaled charges
-#        self.calc_dipoles_All('AlphaE',NN=order)
+#        self._calc_dipoles_All('AlphaE',NN=order)
 #        AtDipoles1=np.copy(self.dipole)
 #        if use_alpha_instead_alphahalf:
 #            AtDipoles1=AtDipoles1/2
 #            self.dipole=self.dipole/2
-#        #Einter=self.get_interaction_energy(index,charge=charge)
+#        #Einter=self._get_interaction_energy(index,charge=charge)
 ## TODO: Check if with using MMpol procedure it souldn't be 1/2 of selfinteraction energy
 #        Eshift=-self.get_selfinteraction_energy()
 #    
@@ -1476,25 +1571,25 @@ class Dielectric:
 #            self.dipole=np.zeros((self.Nat,3),dtype='f8')
 #            
 #            # calculate induced dipoles with polarizability Alpha_E for rescaled charges
-#            self.calc_dipoles_All('Alpha_E',NN=order)
+#            self._calc_dipoles_All('Alpha_E',NN=order)
 #            AtDipoles2=np.copy(self.dipole)
 #            if use_alpha_instead_alphahalf:
 #                AtDipoles2=AtDipoles2/2
 #                self.dipole=self.dipole/2
-#            #Eshift=-self.get_interaction_energy(index,charge=charge)
+#            #Eshift=-self._get_interaction_energy(index,charge=charge)
 #            Eshift+=self.get_selfinteraction_energy()
 #            
 #             # reset iduced dipoles to zero        
 #            self.dipole=np.zeros((self.Nat,3),dtype='f8')
 #            
 #            # calculate induced dipoles with polarizability Beta for rescaled charges
-#            #self.calc_dipoles_All('BetaEE',NN=order//2)
+#            #self._calc_dipoles_All('BetaEE',NN=order//2)
 #            if order>2:
-#                self.calc_dipoles_All('BetaEE',NN=1)
+#                self._calc_dipoles_All('BetaEE',NN=1)
 #            else:
-#                self.calc_dipoles_All('BetaEE',NN=order//2)
+#                self._calc_dipoles_All('BetaEE',NN=order//2)
 #            AtDipolesBeta=np.copy(self.dipole)
-#            #Eshift=-self.get_interaction_energy(index,charge=charge)
+#            #Eshift=-self._get_interaction_energy(index,charge=charge)
 #            
 #            if use_alpha_instead_alphahalf:
 #                self.polar['AlphaE']=self.polar['AlphaE']/2
@@ -1633,7 +1728,7 @@ class Dielectric:
 #        self.dipole=np.zeros((self.Nat,3),dtype='f8')        
 #        
 #        # TrEsp interaction energy
-#        E_TrEsp=self.get_interaction_energy(index,charge=charge) 
+#        E_TrEsp=self._get_interaction_energy(index,charge=charge) 
 #        #print('TrEsp interaction:',E_TrEsp*conversion_facs_energy["1/cm"])
 #        # this will put zero charges on index atoms then calculate potential from
 #        # everything else and calculate interaction with charges defined by charges
@@ -1645,38 +1740,38 @@ class Dielectric:
 #        if not (approx=='MMpol' and order>2):
 #            # calculate induced dipoles with polarizability Beta for rescaled charges
 #            if order>2:
-#                self.calc_dipoles_All('BetaEE',NN=1)
+#                self._calc_dipoles_All('BetaEE',NN=1)
 #            else:
-#                self.calc_dipoles_All('BetaEE',NN=order//2)
-#            #self.calc_dipoles_All('BetaEE',NN=order//2)
+#                self._calc_dipoles_All('BetaEE',NN=order//2)
+#            #self._calc_dipoles_All('BetaEE',NN=order//2)
 #            AtDipolesBeta=np.copy(self.dipole)
 #            E1Bself=-self.get_selfinteraction_energy()      # should be negative for all Beta
-#            E12B=E_TrEsp-self.get_interaction_energy(index,charge=charge) #
+#            E12B=E_TrEsp-self._get_interaction_energy(index,charge=charge) #
 #        
 #            # reset iduced dipoles to zero        
 #            self.dipole=np.zeros((self.Nat,3),dtype='f8')
 #        
 #        # calculate induced dipoles with polarizability AlphaE for rescaled charges
 #        if debug==True and order==2:
-#            self.calc_dipoles_All('AlphaE',NN=1)
+#            self._calc_dipoles_All('AlphaE',NN=1)
 #            self._test_2nd_order('AlphaE')
 #        else:
-#            self.calc_dipoles_All('AlphaE',NN=order)
+#            self._calc_dipoles_All('AlphaE',NN=order)
 #        if use_alpha_instead_alphahalf:
 #            self.dipole=self.dipole/2
 #        AtDipoles1=np.copy(self.dipole)
-#        E12AE=(self.get_interaction_energy(index,charge=charge)-E_TrEsp)
+#        E12AE=(self._get_interaction_energy(index,charge=charge)-E_TrEsp)
 #        
 #        # reset iduced dipoles to zero        
 #        self.dipole=np.zeros((self.Nat,3),dtype='f8')
 #        
 #        if not (approx=='MMpol' and order>2):
 #             # calculate induced dipoles with polarizability AlphaE for rescaled charges
-#            self.calc_dipoles_All('Alpha_E',NN=order)
+#            self._calc_dipoles_All('Alpha_E',NN=order)
 #            if use_alpha_instead_alphahalf:
 #                self.dipole=self.dipole/2
 #            AtDipoles2=np.copy(self.dipole)
-#            E12A_E=(self.get_interaction_energy(index,charge=charge)-E_TrEsp)
+#            E12A_E=(self._get_interaction_energy(index,charge=charge)-E_TrEsp)
 #        
 #        if use_alpha_instead_alphahalf:
 #            self.polar['AlphaE']=self.polar['AlphaE']/2
@@ -1728,7 +1823,7 @@ class Dielectric:
 #        self.dipole=np.zeros((self.Nat,3),dtype='f8')        
 #        
 #        # TrEsp interaction energy
-#        E_TrEsp=self.get_interaction_energy(index,charge=charge) 
+#        E_TrEsp=self._get_interaction_energy(index,charge=charge) 
 #        #print('TrEsp interaction:',E_TrEsp*conversion_facs_energy["1/cm"])
 #        # this will put zero charges on index atoms then calculate potential from
 #        # everything else and calculate interaction with charges defined by charges
@@ -1739,30 +1834,30 @@ class Dielectric:
 #        
 #        # calculate induced dipoles with polarizability Beta for rescaled charges
 #        if order>2:
-#            self.calc_dipoles_All('BetaEE',NN=1)
+#            self._calc_dipoles_All('BetaEE',NN=1)
 #        else:
-#            self.calc_dipoles_All('BetaEE',NN=order//2)
+#            self._calc_dipoles_All('BetaEE',NN=order//2)
 #        AtDipolesBeta=np.copy(self.dipole)
 #        E1Bself=-self.get_selfinteraction_energy()      # should be negative for all Beta
-#        E12B=E_TrEsp-self.get_interaction_energy(index,charge=charge) #
+#        E12B=E_TrEsp-self._get_interaction_energy(index,charge=charge) #
 #        
 #        # reset iduced dipoles to zero        
 #        self.dipole=np.zeros((self.Nat,3),dtype='f8')
 #        
 #        # calculate induced dipoles with polarizability AlphaE for rescaled charges
-#        #self.calc_dipoles_All('AlphaE',NN=order)
-#        self._calc_dipoles_all2('AlphaE',NN=order+2)
+#        #self._calc_dipoles_All('AlphaE',NN=order)
+#        self.__calc_dipoles_All2('AlphaE',NN=order+2)
 #        AtDipoles1=np.copy(self.dipole)
-#        E12AE=2*(self.get_interaction_energy(index,charge=charge)-E_TrEsp)
+#        E12AE=2*(self._get_interaction_energy(index,charge=charge)-E_TrEsp)
 #        
 #        # reset iduced dipoles to zero        
 #        self.dipole=np.zeros((self.Nat,3),dtype='f8')
 #        
 #         # calculate induced dipoles with polarizability AlphaE for rescaled charges
-#        #self.calc_dipoles_All('Alpha_E',NN=order)
-#        self._calc_dipoles_all2('Alpha_E',NN=order+2)        
+#        #self._calc_dipoles_All('Alpha_E',NN=order)
+#        self.__calc_dipoles_All2('Alpha_E',NN=order+2)        
 #        AtDipoles2=np.copy(self.dipole)
-#        E12A_E=2*(self.get_interaction_energy(index,charge=charge)-E_TrEsp)
+#        E12A_E=2*(self._get_interaction_energy(index,charge=charge)-E_TrEsp)
 #        
 #        
 #        Einter=E_TrEsp*(1+E1Bself)+2*self.VinterFG*E12B+E12AE+E12A_E
@@ -2541,13 +2636,11 @@ def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,Vin
     approx : real (optional - init=1.1)
         Specifies which approximation should be used.
             
-        **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
-        `Alpha(-E)`.
-        
-        **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
-
-        **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
-        `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+        * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+          `Alpha(-E)`.
+        * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+        * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+          `Alpha(E)=Alpha(-E)`, however the second one is not condition 
     
     Returns
     --------
@@ -2779,7 +2872,7 @@ if __name__=="__main__":
         print('     Analytical result:',result2)
     
     result3=np.array([[8.0,0.0,0.0],[-8.0,0.0,0.0]],dtype='f8').reshape(6)
-    pol_mol.swap_atoms(index1,index2)
+    pol_mol._swap_atoms(index1,index2)
     res_general=pol_mol._dR_BpA(index2,index2,charge,'AlphaE')
     if np.allclose(res_general[3:9],result3):
         print('Symm _dR_ApA simple system      ...    OK')
@@ -2827,7 +2920,7 @@ if __name__=="__main__":
         print('     Analytical result:',result2)
     
     result3=np.array([[0.064,0.128,0.0],[-0.064,-0.128,0.0]],dtype='f8').reshape(6)
-    pol_mol.swap_atoms(index1,index2)
+    pol_mol._swap_atoms(index1,index2)
     res_general=pol_mol._dR_BpA(index2,index2,charge,'AlphaE')
     
     if np.allclose(res_general[3:9],result3):
