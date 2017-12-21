@@ -2302,6 +2302,8 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
     charge : numpy.array of real (dimension Ndefect_atoms)
         Transition charges for every defect atom. First charge correspond to atom
         defined by first index in index1 list and so on.
+    struc : Structure class
+        Structure of the fluorographene system with single defects
 
     '''    
     if verbose:
@@ -2381,7 +2383,7 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
         mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
                                                                     'CD': [AlphaE,Alpha_E,BetaE],
                                                                     'C': [ZeroM,ZeroM,ZeroM]}})
-    return mol_polar,index1,charge
+    return mol_polar,index1,charge,struc
 
 def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False, def2_charge=True,**kwargs):
     ''' Read all informations needed for Dielectric class and transform system
@@ -2459,7 +2461,8 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
     charge2 : numpy.array of real (dimension Ndefect2_atoms)
         Transition charges for every atom of the second defect. First charge
         correspond to atom defined by first index in index2 list and so on. 
-    
+    struc : Structure class
+        Structure of the fluorographene system with two defects
     '''
     
     
@@ -2564,7 +2567,7 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
                                                                     'CD': [AlphaE,Alpha_E,BetaE],
                                                                     'C': [ZeroM,ZeroM,ZeroM]}})
                                         
-    return mol_polar,index1,index2,charge1,charge2
+    return mol_polar,index1,index2,charge1,charge2,struc
 
 #TODO: Get rid of ShortName
 def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,**kwargs):
@@ -2662,14 +2665,11 @@ def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,Vin
         print('Calculation of interaction energy for:',ShortName)
     
     # read and prepare molecule
-    if kwargs: 
-        mol_polar,index1,charge=prepare_molecule_1Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs)
-    else:
-        mol_polar,index1,charge=prepare_molecule_1Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False)
-        
+    mol_polar,index1,charge,struc=prepare_molecule_1Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs)
+
     # calculate dAVA = <A|V|A>-<G|V|G>
-# TODO: No need to read again the structure and identify the defects after it was allready done in polarization class
-    mol_Elstat,index,charge_grnd=ElStat_PrepareMolecule_1Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False)
+    AditInfo={'Structure': struc,'index1': index1}
+    mol_Elstat,index,charge_grnd=ElStat_PrepareMolecule_1Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
     dAVA=mol_Elstat.get_EnergyShift()
 
     # calculate transition energy shifts and transition dipole change      
@@ -2805,14 +2805,11 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
         print('Calculation of interaction energy for:',ShortName)
     
     # read and prepare molecule
-    if kwargs:
-        mol_polar,index1,index2,charge1,charge2=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all,verbose=False,def2_charge=True,**kwargs)
-    else:
-        mol_polar,index1,index2,charge1,charge2=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all,verbose=False,def2_charge=True)
+    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all,verbose=False,def2_charge=True,**kwargs)
     
     # # calculate dAVA = <A|V|A>-<G|V|G> and dBVB = <B|V|B>-<G|V|G>
-# TODO: No need to read again the structure and identify the defects after it was allready done in polarization class
-    mol_Elstat,indx1,indx2,charge1_grnd,charge2_grnd=ElStat_PrepareMolecule_2Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False)
+    AditInfo={'Structure': struc,'index1': index1,'index2':index2}
+    mol_Elstat,indx1,indx2,charge1_grnd,charge2_grnd=ElStat_PrepareMolecule_2Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
     dAVA=mol_Elstat.get_EnergyShift(index=index2, charge=charge2_grnd)
     dBVB=mol_Elstat.get_EnergyShift(index=index1, charge=charge1_grnd)
 

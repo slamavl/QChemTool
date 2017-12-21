@@ -24,6 +24,7 @@ from ..output import OutputToXYZ, OutputTOmol2
 nist_file = path.join(path.dirname(path.realpath(__file__)),
                       'supporting_data/Atomic_Weights_NIST.html')
 nist_mass = None
+nist_indx = None
  
     
 class Structure(PositionUnitsManaged):
@@ -1406,7 +1407,7 @@ def read_nist():
   nist_mass : array dimension (Nx3)
       nist_mass[i]=[atom_i_name,atom_i_mass]
   '''
-  global nist_mass      
+  global nist_mass, nist_indx    
   #''' Pole Nx2 kde jsou na prvnim miste nazvy atomu a na druhem miste
   #jsou atomve hmotnosti. Atomy jsou serazeny podle protonovych cisel. Pole je cislovano od 0!!!
   #dulezita zmena oproti fortranu ''' 
@@ -1437,7 +1438,11 @@ def read_nist():
       nist_mass[index][0] = thisline[-1]
     elif 'Standard Atomic Weight =' in line and new:
       nist_mass[index][1] = float(rm_brackets(thisline[-1]))
-      
+  
+  nist_indx={}
+  for ii in range(len(nist_mass)):
+      nist_indx[nist_mass[ii][0]] = ii+1
+    
 def get_mass(atom):
   '''Returns the standard atomic mass of a given atom.
     
@@ -1453,12 +1458,13 @@ def get_mass(atom):
   '''
   
   if nist_mass is None:
-    read_nist()  
+    read_nist()
   try:                          # If atom defined by proton number then return its mass
     atom = int(atom) - 1
     return nist_mass[atom][1]
   except ValueError:            # if atom defined by string return its mass
-    return dict(nist_mass)[atom.title()]
+    return nist_mass[get_atom_indx(atom)][1]
+    #return dict(nist_mass)[atom.title()]
 
 def get_atom_symbol(atom):
   '''Returns the atomic symbol of a given atom.
@@ -1496,18 +1502,19 @@ def get_atom_indx(atom):
       Proton number of given atom
     '''
     
-    if nist_mass is None:
+    if nist_indx is None:
         read_nist()  
     try:
         atom = int(atom) - 1
         return nist_mass[atom][0]
     except ValueError:
-        indx=np.where(np.array(nist_mass)[:,0]==atom)[0]
-        if len(indx)==0:
-            raise IOError('Unknown atom type')
-        else:
-            index = indx[0]+1
-            return index
+#        indx=np.where(np.array(nist_mass)[:,0]==atom)[0]
+#        if len(indx)==0:
+#            raise IOError('Unknown atom type')
+#        else:
+#            index = indx[0]+1
+#            return index
+        return nist_indx[atom]
   
 
 #==============================================================================
