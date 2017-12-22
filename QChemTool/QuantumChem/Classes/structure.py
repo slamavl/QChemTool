@@ -13,7 +13,7 @@ import networkx as nx
 from os import path
 
 
-from ..read_mine import read_xyz, read_VMD_pdb, read_mol2
+from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf
 from ..read_mine import read_TrEsp_charges as read_TrEsp
 from .general import Coordinate,Grid 
 from ...General.UnitsManager import position_units,PositionUnitsManaged,energy_units
@@ -24,6 +24,7 @@ from ..output import OutputToXYZ, OutputTOmol2
 nist_file = path.join(path.dirname(path.realpath(__file__)),
                       'supporting_data/Atomic_Weights_NIST.html')
 nist_mass = None
+nist_indx = None
  
     
 class Structure(PositionUnitsManaged):
@@ -212,20 +213,21 @@ class Structure(PositionUnitsManaged):
                 for ii in range(len(at_type)):
                     mass.append(get_mass(at_type[ii]))
                 self.mass=np.append(self.mass,mass)
+            self.bonds=None
                 
     def add_atom(self,coor,at_type,ncharge=None,mass=None):
         if self.ncharge is not None:
-            if len(self.ncharge)==self.nat and ncharge is None:
-                raise Warning('For every atom there are defined nuclear charges. In odred to be consistent you have to specify them for new atoms')
-                return
+#            if len(self.ncharge)==self.nat and ncharge is None:
+#                raise Warning('For every atom there are defined nuclear charges. In odred to be consistent you have to specify them for new atoms')
+#                return
             if len(self.ncharge)!=self.nat: 
                 raise Warning('There are not specified nuclear charges for all atoms. Set these charges before you add new atoms')
                 return
-        if self.mass is not None:
-            if len(self.mass)==self.nat and mass is None:
-                raise Warning('For every atom there is defined nuclear mass. In odred to be consistent you have to specify it for new atoms')
-                return
-        elif mass is not None:
+#        if self.mass is not None:
+#            if len(self.mass)==self.nat and mass is None:
+#                raise Warning('For every atom there is defined nuclear mass. In odred to be consistent you have to specify it for new atoms')
+#                return
+        if mass is not None:
             if len(self.mass)!=self.nat: 
                 raise Warning('There is not specified nuclear mass for all atoms. Set the mass for all atoms before you add new ones')
                 return
@@ -251,6 +253,7 @@ class Structure(PositionUnitsManaged):
         else:
             ncharge=get_atom_indx(at_type)
             self.ncharge=np.append(self.ncharge,ncharge)
+        self.bonds=None
 
     def get_com(self):
         """ Outputs center of mass in as coordinate class
@@ -592,6 +595,36 @@ class Structure(PositionUnitsManaged):
         Aditional_info=AditionalInfo[5]
 
         return Name,Charge_method,Aditional_info
+    
+    def load_gjf(self,filename):
+        """ Loads all structure information from Gaussian gjf input file.
+        If the structure is allready initialized it adds the molecule to the
+        structure instead of rewriting the existing information.
+        
+        Parameters
+        -----------
+        filename : string
+            Name of the input file including the path if needed
+        """
+        
+        Geom,at_type=read_gaussian_gjf(filename,verbose=False)
+#        at_type=[]
+#        for ii in charge:
+#            at_type.append(get_atom_symbol(ii))
+        with position_units('Angstrom'):
+            if not self.init:
+                self.coor=Coordinate(Geom)
+                self.at_type=at_type.copy()
+                self.nat=len(self.at_type)
+                self.ncharge=np.zeros(self.nat,dtype='i4')
+                for ii in range(self.nat):
+                    self.ncharge[ii]=get_atom_indx(at_type[ii])
+                self.mass=np.zeros(self.nat,dtype='f8')
+                for ii in range(self.nat):
+                    self.mass[ii]=get_mass(at_type[ii])
+                self.init=True
+            else:
+                self.add_coor(np.array(Geom),at_type)
 
 
     def read_TrEsp_charges(self,filename,state='Ground',verbose=True):
@@ -938,15 +971,23 @@ class Structure(PositionUnitsManaged):
             raise IOError('Only list of indexes is supported in delete_by_indx')
         new_struc=deepcopy(self)
         indx_sorted=sorted(indx)
+        mask=np.ones(new_struc.nat,dtype='bool')
+        mask[indx_sorted] = False
+        if new_struc.ncharge is not None:
+            new_struc.ncharge = new_struc.ncharge[mask]
+        if new_struc.mass is not None:
+            new_struc.mass = new_struc.mass[mask]
         for ii in reversed(indx_sorted):
             if new_struc.at_type is not None:
                 del(new_struc.at_type[ii])
             if new_struc.coor is not None:
                 new_struc.coor.del_coor(ii)
-            if self.ncharge is not None:
-                del(new_struc.ncharge[ii])
-            if self.mass is not None:
-                del(new_struc.mass[ii])
+#            if new_struc.ncharge is not None:
+#                print(ii,new_struc.ncharge.shape,new_struc.ncharge[ii],new_struc.ncharge.__class__)
+#                np.delete(new_struc.ncharge,ii)
+#                print(ii,new_struc.ncharge.shape,new_struc.ncharge[ii],new_struc.ncharge.__class__)
+#            if self.mass is not None:
+#                np.delete(new_struc.mass,ii)
             if self.vdw_rad is not None:
                 del(new_struc._vdw_rad[ii])
             if self.ff_type is not None:
@@ -1366,7 +1407,7 @@ def read_nist():
   nist_mass : array dimension (Nx3)
       nist_mass[i]=[atom_i_name,atom_i_mass]
   '''
-  global nist_mass      
+  global nist_mass, nist_indx    
   #''' Pole Nx2 kde jsou na prvnim miste nazvy atomu a na druhem miste
   #jsou atomve hmotnosti. Atomy jsou serazeny podle protonovych cisel. Pole je cislovano od 0!!!
   #dulezita zmena oproti fortranu ''' 
@@ -1397,7 +1438,11 @@ def read_nist():
       nist_mass[index][0] = thisline[-1]
     elif 'Standard Atomic Weight =' in line and new:
       nist_mass[index][1] = float(rm_brackets(thisline[-1]))
-      
+  
+  nist_indx={}
+  for ii in range(len(nist_mass)):
+      nist_indx[nist_mass[ii][0]] = ii+1
+    
 def get_mass(atom):
   '''Returns the standard atomic mass of a given atom.
     
@@ -1413,12 +1458,13 @@ def get_mass(atom):
   '''
   
   if nist_mass is None:
-    read_nist()  
+    read_nist()
   try:                          # If atom defined by proton number then return its mass
     atom = int(atom) - 1
     return nist_mass[atom][1]
   except ValueError:            # if atom defined by string return its mass
-    return dict(nist_mass)[atom.title()]
+    return nist_mass[get_atom_indx(atom)][1]
+    #return dict(nist_mass)[atom.title()]
 
 def get_atom_symbol(atom):
   '''Returns the atomic symbol of a given atom.
@@ -1456,18 +1502,19 @@ def get_atom_indx(atom):
       Proton number of given atom
     '''
     
-    if nist_mass is None:
+    if nist_indx is None:
         read_nist()  
     try:
         atom = int(atom) - 1
         return nist_mass[atom][0]
     except ValueError:
-        indx=np.where(np.array(nist_mass)[:,0]==atom)[0]
-        if len(indx)==0:
-            raise IOError('Unknown atom type')
-        else:
-            index = indx[0]+1
-            return index
+#        indx=np.where(np.array(nist_mass)[:,0]==atom)[0]
+#        if len(indx)==0:
+#            raise IOError('Unknown atom type')
+#        else:
+#            index = indx[0]+1
+#            return index
+        return nist_indx[atom]
   
 
 #==============================================================================

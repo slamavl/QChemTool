@@ -257,7 +257,10 @@ def OutputTOmol2(Coor,Bond,Charge,AtName,AtType,MolName,filename,ChargeMethod='r
             
         
 
-def OutputToGauss(Coord,AtType,calctype,method,basis,charge=0,mutiplicity=1,NCPU=12,filename='OutputPython.gjf',namechk='OutputPython.chk',old_chk=None,other_options=' ',constrain=None,MEM_GB=None,Tight=True):
+def OutputToGauss(Coord,AtType,calctype,method,basis,charge=0,
+                  mutiplicity=1,NCPU=12,filename='OutputPython.gjf',
+                  namechk='OutputPython.chk',old_chk=None,other_options=' ',
+                  constrain=None,MEM_GB=None,Tight=True,verbose=True):
     ''' Create basic imput file for gaussian calculation (so far only for TD-DFT
     excited state calculation)
     
@@ -268,7 +271,9 @@ def OutputToGauss(Coord,AtType,calctype,method,basis,charge=0,mutiplicity=1,NCPU
     AtType : numpy.array or list of characters (dimension Natoms)
         List of atomic types (for example `AtType=['C','N','C','C',...]`)
     calctype : string
-        calctype=`excit` is for TD-DFT excited state properties calculation.
+        ``calctype='excit'`` is for TD-DFT excited state properties calculation.
+        ``calctype='opt_restricted'`` is for ground state geometry optimization
+        with constrains.
     method : string
         HF, CIS or functional which is used for DFT calculation
     basis : string
@@ -283,9 +288,19 @@ def OutputToGauss(Coord,AtType,calctype,method,basis,charge=0,mutiplicity=1,NCPU
         Name of gaussian input file.
     namechk : string (optional - init='OutputPython.chk')
         Name of gaussian checkpoint file
+    oldchk : string (optional)
+        Name of gaussian checkpoint file from previous calculation (if used)
     other_options : string ( optional - init=' ')
         Other options which should be used for gaussian calculation like specifying
         maximum numer of SCF cycles etc.
+    constrain : list or numpy array of real (optional)
+        Indexes of atoms which should be kept frozen during geometry optimization
+        (starting from 0)
+    MEM_GB : integer (optional)
+        Size of required memory for Gaussian 09 calcuation in GB. If not present
+        Gaussian default value will be used
+    Tight : logical (optional init = True)
+        Specify if tight convergence criteria should be used for SCF procedure 
     
     Notes
     -------
@@ -294,7 +309,8 @@ def OutputToGauss(Coord,AtType,calctype,method,basis,charge=0,mutiplicity=1,NCPU
     ` DENSITY=Current scf=(Tight,XQC) Symmetry=(Loose,Follow) GFPrint GFInput IOp(6/7=3) IOp(9/40=3)`
     '''    
     
-    print('Warning: Function OutputToGauss need ANGSTROMS as input coordinate units')
+    if verbose:
+        print('Warning: Function OutputToGauss need ANGSTROMS as input coordinate units')
     
     if Tight:
         tight_str="Tight,"

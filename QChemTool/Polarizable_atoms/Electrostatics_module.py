@@ -93,7 +93,7 @@ class Electrostatics:
         return Eshift
         
 
-def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False):
+def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False,**kwargs):
     ''' Read all informations needed for Electrostatics class and transform system
     with single defect into this class. Useful for calculation of transition site
     energy shifts for molecules surrounded by electrostatic environment. 
@@ -125,6 +125,10 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         not yet fully implemented.
     verbose : logical (optional - init=False)
         If `True` aditional information about whole proces will be printed
+    **kwargs : dictionary (optional)
+        If structure of the system and indexes of the defects are known they
+        could be included as ``{'Structure': struc,'index1': index1}`` to 
+        avoid re-assignment and save time 
     
     Returns
     -------
@@ -159,8 +163,11 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         print('        Loading molecules and charges...')
     struc_test=Structure()
     struc_test.load_xyz(xyzfile2)
-    struc=Structure()
-    struc.load_xyz(xyzfile)
+    if 'Structure' in kwargs.keys():
+        struc=kwargs['Structure'].copy()    # no need to copy structure is not changed
+    else:
+        struc=Structure()
+        struc.load_xyz(xyzfile)  #FG with single defect
     
     if ChargeType=='qchem' or ChargeType=='qchem_all':
         coor_grnd,charge_grnd,at_type=read_TrEsp_charges(filenameESP_grnd,verbose=False)
@@ -206,12 +213,16 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         coor_exct=np.copy(coor)
         charge_exct=np.copy(charge)
     
-    index1=identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
-    if len(index1)!=len(np.unique(index1)):
-        raise IOError('There are repeating elements in index file')
+    if "index1" in kwargs.keys():
+        index1=kwargs["index1"]
+    else:
+        index1=identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+        if len(index1)!=len(np.unique(index1)):
+            raise IOError('There are repeating elements in index file')
         
     # Identify inside carbons connected to fluorines and outside ones
-    struc.guess_bonds()
+    if struc.bonds is None:
+        struc.guess_bonds()
     NBonds=np.zeros(len(struc.bonds),dtype='i')
     for ii in range(len(struc.bonds)):
         if struc.at_type[struc.bonds[ii,0]]=='C' and struc.at_type[struc.bonds[ii,1]]=='F':
@@ -255,9 +266,9 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     
     Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type) 
     
-    return Elstat_mol,struc.at_type
+    return Elstat_mol,index1,charge_grnd
 
-def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False):
+def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False,**kwargs):
     ''' Read all informations needed for Electrostatics class and transform system
     with single defect into this class. Useful for calculation of transition site
     energy shifts for molecules surrounded by electrostatic environment. 
@@ -291,6 +302,10 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         not yet fully implemented.
     verbose : logical (optional - init=False)
         If `True` aditional information about whole proces will be printed
+    **kwargs : dictionary (optional)
+        If structure of the system and indexes of the defects are known they
+        could be included as ``{'Structure': struc,'index1': index1,'index2': 
+        index2}`` to avoid re-assignment and save time
     
     Returns
     -------
@@ -333,8 +348,11 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     struc2_test=Structure()  # from charge fitting
     struc1_test.load_xyz(xyzfile_chrg1)
     struc2_test.load_xyz(xyzfile_chrg2)
-    struc=Structure()
-    struc.load_xyz(xyzfile)  #FG with two defects
+    if 'Structure' in kwargs.keys():
+        struc=kwargs['Structure'].copy()    # no need to copy structure is not changed
+    else:
+        struc=Structure()
+        struc.load_xyz(xyzfile)  #FG with two defects
     if ChargeType=='qchem' or ChargeType=='qchem_all':
         coor_grnd1,charge_grnd1,at_type1=read_TrEsp_charges(filenameESP_grnd1,verbose=False)
         coor_exct1,charge_exct1,at_type1=read_TrEsp_charges(filenameESP_exct1,verbose=False)
@@ -413,14 +431,19 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         coor_exct2=np.copy(coor)
         charge_exct2=np.copy(charge)
     
-    index1=identify_molecule(struc,struc1_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
-    index2=identify_molecule(struc,struc2_test,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
-    if len(index1)!=len(np.unique(index1)) or len(index2)!=len(np.unique(index2)):
-        raise IOError('There are repeating elements in index file')
+    if "index1" in kwargs.keys() and "index2" in kwargs.keys():
+        index1=kwargs["index1"]
+        index2=kwargs["index2"]
+    else:    
+        index1=identify_molecule(struc,struc1_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+        index2=identify_molecule(struc,struc2_test,indx_center2,indx_x2,indx_y2,indx_center_test,indx_x_test,indx_y_test,onlyC=True)
+        if len(index1)!=len(np.unique(index1)) or len(index2)!=len(np.unique(index2)):
+            raise IOError('There are repeating elements in index file')
 
 
     # Identify inside carbons connected to fluorines and outside ones
-    struc.guess_bonds()
+    if struc.bonds is None:
+        struc.guess_bonds()
     NBonds=np.zeros(len(struc.bonds),dtype='i')
     for ii in range(len(struc.bonds)):
         if struc.at_type[struc.bonds[ii,0]]=='C' and struc.at_type[struc.bonds[ii,1]]=='F':
