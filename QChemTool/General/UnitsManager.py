@@ -6,9 +6,9 @@ Created on Mon Nov  6 14:49:36 2017
 """
 
 import numpy as np
-from Program_Manager.General.units import conversion_facs_frequency
-from Program_Manager.General.units import conversion_facs_energy
-from Program_Manager.General.units import conversion_facs_position
+from .units import conversion_facs_frequency
+from .units import conversion_facs_energy
+from .units import conversion_facs_position
 
 class Singleton(type):
     """Base type of singletons, such as the main Quantarhei class Manager
