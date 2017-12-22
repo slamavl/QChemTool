@@ -125,6 +125,10 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         not yet fully implemented.
     verbose : logical (optional - init=False)
         If `True` aditional information about whole proces will be printed
+    **kwargs : dictionary (optional)
+        If structure of the system and indexes of the defects are known they
+        could be included as ``{'Structure': struc,'index1': index1}`` to 
+        avoid re-assignment and save time 
     
     Returns
     -------
@@ -298,6 +302,10 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         not yet fully implemented.
     verbose : logical (optional - init=False)
         If `True` aditional information about whole proces will be printed
+    **kwargs : dictionary (optional)
+        If structure of the system and indexes of the defects are known they
+        could be included as ``{'Structure': struc,'index1': index1,'index2': 
+        index2}`` to avoid re-assignment and save time
     
     Returns
     -------
