@@ -12,7 +12,7 @@ from .Classes.general import Coordinate
 
 def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
                      List=None, MaxInt=100, q_tol=1e-6, NoHrestr=True, 
-                     constrains=[], Type = "Ground"):
+                     constrains=[], Freeze=[], Type = "Ground"):
     """ Function for restrained ESP fit of atomic center charges from 
     electrostatic potential
     
@@ -53,7 +53,7 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
         hydrogens
     constrains : list of list of integer (optional init = [])
         List of atoms with the same charges (e.g. for symmetry or other reasons).
-        For example `constrains=[[1,5,8,10],[2,6]]` means that q[1]=q[5]=q[8]=q[10]
+        For example ``constrains=[[1,5,8,10],[2,6]]`` means that q[1]=q[5]=q[8]=q[10]
         and q[2]=q[6]. For using constrains it is recommended to use the whole
         structure for fitting because after exluding the hydrogens indexes might
         change. Indexing is from zero!
@@ -135,13 +135,18 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
     C = np.ones((1,Ncharge),dtype='f8')
     d = np.zeros(1,dtype='f8')
     d[0] = Q_tot 
-    for ii in constrains:
+    for ii in range(len(constrains)):
         for jj in range(1,len(constrains[ii])):
             cc = np.zeros(Ncharge,dtype='f8')
             cc[constrains[ii][0]] = 1
             cc[constrains[ii][jj]] = -1
-            C = np.vstack(C,cc)
+            C = np.vstack( (C,cc) )
             d = np.append(d,0.0)
+    for ii in range(len(Freeze)):
+        cc = np.zeros(Ncharge,dtype='f8')
+        cc[Freeze[ii][0]] = 1
+        C = np.vstack( (C,cc) )
+        d = np.append(d,Freeze[ii][1])
     CT = C.T
     CT = np.vstack( (CT, np.zeros((C.shape[0],C.shape[0]),dtype="f8") ) )
     
@@ -172,10 +177,24 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
         H_indx = np.where(at_type == "H")[0]
         q_rest[H_indx] = 0.0
     
-    # Calculate initial guess with harmonic constrains
+    # Calculate initial guess with harmonic restrains
     A_work,b_work = add_harmonic_restrain(A,b,q0,q_rest,Ncharge)
     res = np.linalg.solve(A_work,b_work)
-    q = res[:Ncharge]  # initial charges for SCF procedure with hyperbolic constrains
+    q = res[:Ncharge]  # initial charges for SCF procedure with hyperbolic restrains
+    
+    # Results for harmonic restrains
+    q_harmonic = q.copy()
+    pot_harmonic = potential_charge(q_harmonic,R)
+    pot_diff = pot_harmonic - ESP_pot
+    Chi_sqr_harmonic = np.dot(pot_diff,pot_diff)
+    RRMS_harmonic = np.sqrt(Chi_sqr_harmonic/np.dot(ESP_pot,ESP_pot))
+    dipole_harmonic = np.dot(q_harmonic,coor)
+    quadrupole_traceless, quadrupole = ESP_get_quadrupole(coor,q_harmonic)
+    result={"charge_harmonic": q_harmonic,
+            "potential_harmonic": pot_harmonic,"Chi_square_harmonic": Chi_sqr_harmonic,
+            "RRMS_harmonic": RRMS_harmonic,"dipole_harmonic": dipole_harmonic,
+            "quadrupole_harmonic": quadrupole,
+            "quadrupole_traceless_harmonic": quadrupole_traceless}
     
     # SCF calculation procedure
     condition = True
@@ -222,15 +241,55 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
         elif Type=="Transition":
             struc.esp_trans = q.copy()
     
+    # Results 
+    Rcom = struc.get_com()
+    dipole = np.dot(q,coor)
+    quadrupole_traceless, quadrupole = ESP_get_quadrupole(coor,q)
+    
     with position_units("Bohr"):
         coor = Coordinate(coor)
-    result={"charge": q,"coor": coor,"Chi_square": Chi_sqr,"RRMS": RRMS,
-            "steps": count,"q_change": q_change}
+    result.update({"charge": q,"coor": coor,"Chi_square": Chi_sqr,"RRMS": RRMS,
+            "steps": count,"q_change": q_change,"potential_fit": pot_fit,
+            "potential_calc": ESP_pot,"dipole": dipole,"quadrupole": quadrupole,
+            "quadrupole_traceless": quadrupole_traceless})
     
     return result
 
     
+def ESP_get_quadrupole(coor, charge, origin=np.zeros(3,dtype="f8") ):
+    # usualy coordinate system origin in center of mass
+    X = coor[:,0] - origin[0]
+    Y = coor[:,1] - origin[1]
+    Z = coor[:,2] - origin[2]
+    XX = X**2
+    YY = Y**2
+    ZZ = Z**2
     
+    # Calculation of traceless quadrupole defined as Qij = sum_l{ q_l*[3*r_il*rjl - |r_l|^2 * delta_ij] }    
+    # Qxx
+    R = 2*XX - YY - ZZ
+    Qxx = np.dot(charge,R)
+    # Qyy
+    R = 2*YY - XX - ZZ
+    Qyy = np.dot(charge,R)
+    # Qzz
+    R = 2*ZZ - XX - YY
+    Qzz = np.dot(charge,R)
+    # Q xy
+    Qxy = np.dot(charge,X*Y)
+    # Q xz
+    Qxz = np.dot(charge,X*Z)
+    # Q yz
+    Qyz = np.dot(charge,Y*Z)
     
+    Quad_traceless = [Qxx,Qxy,Qxz,Qyy,Qyz,Qzz]
     
+    # Calculation of quadrupole tensor with nonzero trace
+    Qxx = np.dot(charge,XX)
+    Qyy = np.dot(charge,YY)
+    Qzz = np.dot(charge,ZZ)
+    
+    Quad = [Qxx,Qxy,Qxz,Qyy,Qyz,Qzz]
+    
+    return Quad_traceless, Quad
     
