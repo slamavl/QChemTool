@@ -9,7 +9,7 @@ from .Classes.atomic_orbital import AO,Atom,l_orient
 from .Classes.molecular_orbital import MO
 from .Classes.excitation import Excitation
 from ..General.UnitsManager import energy_units,position_units
-    
+from .Classes.mdinfo import MDinfo   
 
 # TODO: All coordinates should be position units managed
 
