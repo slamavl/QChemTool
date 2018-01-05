@@ -480,17 +480,25 @@ class Structure(PositionUnitsManaged):
         with position_units('Angstrom'):
             if not self.init:
                 self.coor=Coordinate(Geom)
-                self.at_type=At_type.copy()
-                self.nat=len(self.at_type)
+                self.nat=len(At_type)
+                self.at_type=[]
+                for jj in range(self.nat):
+                    self.at_type.append(''.join([i for i in At_type[jj] if not i.isdigit()]))
+                    self.at_type[jj]=self.at_type[jj].capitalize()
+                #self.at_type=At_type.copy()
                 self.ncharge=np.zeros(self.nat,dtype='i4')
                 for ii in range(self.nat):
-                    self.ncharge[ii]=get_atom_indx(At_type[ii])
+                    self.ncharge[ii]=get_atom_indx(self.at_type[ii])
                 self.mass=np.zeros(self.nat,dtype='f8')
                 for ii in range(self.nat):
-                    self.mass[ii]=get_mass(At_type[ii])
+                    self.mass[ii]=get_mass(self.at_type[ii])
                 self.init=True
             else:
-                self.add_coor(np.array(Geom),At_type)
+                at_type = []
+                for jj in range(len(At_type)):
+                    at_type.append(''.join([i for i in At_type[jj] if not i.isdigit()]))
+                    at_type[jj]=at_type[jj].capitalize()
+                self.add_coor(np.array(Geom),at_type)
                 
     
     def load_pdb(self,filename):
