@@ -931,7 +931,7 @@ class Dielectric:
         # Polarization by molecule B
         self.charge[defA_indx]=0.0
         self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
-        dipolesB=np.sum(self.dipole,axis=0)
+        dipolesB=np.sum(self.dipole,axis=0)   # induced dipoles by second defect (defect B) 
         self.charge[defA_indx]=defA_charge
         PolMAT[1,1] = self._get_interaction_energy(defB_indx,charge=defB_charge,debug=False) - E_TrEsp
         PolMAT[0,1] = self._get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
@@ -951,9 +951,6 @@ class Dielectric:
             else:
                 raise Warning('ApB != BpA')
         self.dipole=np.zeros((self.Nat,3),dtype='f8')
-        
-        if debug:
-            print(PolMAT*conversion_facs_energy["1/cm"])
         
         if typ=='AlphaE' or typ=='BetaEE':
             return PolMAT,dipolesA,dipolesB
