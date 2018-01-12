@@ -110,6 +110,8 @@ class Structure(PositionUnitsManaged):
         Reads the molecule from pdb file into structure
     load_mol2 :
         Reads the molecule from mol2 file into structure
+    load_gjf :
+        Reads the molecule from Gaussian input file into structure
     read_TrEsp_charges :
         Reads the molecule from TrEsp charges fiting procedure. If molecule is 
         allready allocated only charges are read

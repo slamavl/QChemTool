@@ -13,7 +13,7 @@ from .Classes.general import Energy,Coordinate,Dipole
 
 
 if (platform=='cygwin' or platform=="linux" or platform == "linux2"):
-        from Program_Manager.QuantumChem.Fortran.wrapper import w_fortranmodule as fortran
+        from .Fortran.wrapper import w_fortranmodule as fortran
 #if (platform=='cygwin' or platform=="linux" or platform == "linux2"):
 #        from Program_Test.QuantumChem.Fortran.wrapper import w_fortranmodule as fortran
 
