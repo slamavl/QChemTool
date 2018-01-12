@@ -11,7 +11,7 @@ from ..General.UnitsManager import position_units
 from .Classes.general import Coordinate
 
 def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
-                     List=None, MaxInt=100, q_tol=1e-6, NoHrestr=True, 
+                     List=None, MaxInt=100, q_tol=1e-7, NoHrestr=True, 
                      constrains=[], Freeze=[], Type = "Ground"):
     """ Function for restrained ESP fit of atomic center charges from 
     electrostatic potential
@@ -57,6 +57,11 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
         and q[2]=q[6]. For using constrains it is recommended to use the whole
         structure for fitting because after exluding the hydrogens indexes might
         change. Indexing is from zero!
+    Freeze : list (dimension N_frozen_atoms x 2) (optional)
+        List of indexes and charges for atoms which should be frozen on constant
+        charge. for example: ``Freeze=[[1,0.0],[5,0.25],...] means that charge
+        of atom with index 1 will be frozen on 0.0, charge of atom with index 
+        5 wil be frozen on 0.25 etc.
         
     Returns
     -------
@@ -80,11 +85,36 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
           * **q_change** : list of float
             Sum of diferences between charges from two following steps divided
             by number of atoms 
-    
+          * **potential_fit** : numpy array of float (dimension Npoints)
+            Electrostatic potential calculated from fitted charges evaluated at 
+            the same points as QC ESP which was needed as an input
+          * **potential_calc** : numpy array of float (dimension Npoints)
+            QC ESP potential. The same as ESP_pot which was required as an input.
+          * **dipole** : numpy array of float (dimension 3)
+            Electrostatic dipole moment calculated from fitted charges
+          * **quadrupole_traceless** : list of float (dimension 6)
+            Electrostatic traceless quadrupole moment calculated from fitted 
+            charges. Ordering is following: [Qxx,Qxy,Qxz,Qyy,Qyz,Qzz]
+          * **charge_harmonic** : numpy array of float (dimension Ncharge)
+            Fitted charges from RESP procedure for harmonic restrains
+          * **Chi_square_harmonic** : list of float (dimension steps)
+            The same as ``Chi_square`` only for harmonic restrains
+          * **RRMS_harmonic** : list of float
+            The same as ``RRMS`` only for harmonic restrains
+          * **potential_harmonic** : numpy array of float (dimension Npoints)
+            The same as ``potential_fit`` only for harmonic restrains
+          * **dipole_harmonic** : numpy array of float (dimension 3)
+            The same as ``dipole`` only for harmonic restrains
+          * **quadrupole_traceless_harmonic** : list of float (dimension 6)
+            The same as ``quadrupole_traceless`` only for harmonic restrains
+
     Notes
     -------
     **With default settings provides the same results as AMBER RESP fitting 
     procedure.**
+    
+    **Quadrupole moment should be calculated after transformation of coordinate
+    origin into center of mass and align axes wit main axes of inetria tensor.**
     
     Ispired by "A Well-Behaved Electrostatic Potential Based Method Using Charge 
     Restraints for Deriving Atomic Charges: The RESP Model, Christopher 
@@ -244,7 +274,7 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
     # Results 
     Rcom = struc.get_com()
     dipole = np.dot(q,coor)
-    quadrupole_traceless, quadrupole = ESP_get_quadrupole(coor,q)
+    quadrupole_traceless, quadrupole = ESP_get_quadrupole(coor,q,origin=Rcom._value)
     
     with position_units("Bohr"):
         coor = Coordinate(coor)
@@ -257,6 +287,33 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
 
     
 def ESP_get_quadrupole(coor, charge, origin=np.zeros(3,dtype="f8") ):
+    """ Calculate quadrupole moment for set of point charges. If coordinates
+    are given in ATOMIC UNITS units of quadrupole will be elemental charge * Bohr^2.
+    
+    Parameters
+    ----------
+    coor : numpy array of float (dimension Ncharge x 3)
+        Aoordinates of charge centers (in ATOMIC UNITS)
+    charge : numpy array of float (dimension Ncharge)
+        Charges for every position (atom)
+    origin : numpy array of float (dmension 3) (optional)
+        Coordinate system origin (in ATOMIC UNITS)
+    
+    Returns
+    --------
+    Quad_traceless : list of float (dimension 6)
+        Traceles quadrupole moment ordered as [Qxx,Qxy,Qxz,Qyy,Qyz,Qzz]
+    Quad : list of float (dimension 6)
+        Quadrupole moment ordered as [Qxx,Qxy,Qxz,Qyy,Qyz,Qzz]
+    
+    Notes
+    ------
+    Traceless quadrupole is defined as:
+    ``Qij = sum_l{ q_l*[3*r_il*rjl - |r_l|^2 * delta_ij] }``
+    where i,j is in {x,y,z} and l goes through all charges
+    
+    """
+    
     # usualy coordinate system origin in center of mass
     X = coor[:,0] - origin[0]
     Y = coor[:,1] - origin[1]
