@@ -42,7 +42,9 @@ def output_MD_statictic(res, inp, avrg, print_input=False, plot_stat=True, size_
     """ Output MD setting and outputs time evolution and statistic of most
     important quantities
     """
-    
+
+# TODO: write documentation
+
 # TODO: Add possibility to read different Running average size for different quantities
     RA = {"temperature": size_RA, "pressure": 50, "density": size_RA,
           "Etotal": size_RA, "Epotential": size_RA, "Ekinetic": size_RA }

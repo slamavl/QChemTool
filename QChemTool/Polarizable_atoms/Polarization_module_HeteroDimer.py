@@ -7,6 +7,7 @@ Created on Tue Jan 31 14:33:56 2017
 import numpy as np
 from copy import deepcopy
 from scipy.spatial.distance import pdist,squareform
+import os
 
 from ..QuantumChem.Classes.structure import Structure
 from ..QuantumChem.calc import identify_molecule
@@ -19,6 +20,7 @@ from .Electrostatics_module import PrepareMolecule_2Def as ElStat_PrepareMolecul
 from ..General.Potential import potential_charge, potential_dipole
 from ..QuantumChem.Classes.general import Energy as EnergyClass
 from ..General.UnitsManager import energy_units
+from ..QuantumChem.calc import GuessBonds
 
 from ..QuantumChem.output import OutputMathematica
 
@@ -909,6 +911,9 @@ class Dielectric:
             Total induced dipole moment in the environment by the first defect.
         dipolesB : numpy array of float (dimension 3)
             Total induced dipole moment in the environment by the second defect.
+        dipoles_polA : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect
         
         """
         
@@ -950,13 +955,14 @@ class Dielectric:
                 print('ApB = BpA')
             else:
                 raise Warning('ApB != BpA')
+        dipoles_polA = self.dipole.copy()
         self.dipole=np.zeros((self.Nat,3),dtype='f8')
         
         if typ=='AlphaE' or typ=='BetaEE':
-            return PolMAT,dipolesA,dipolesB
+            return PolMAT,dipolesA,dipolesB,dipoles_polA
         elif typ=='Alpha_E':
             PolMAT[[0,1],[0,1]] = PolMAT[[1,0],[1,0]]   # Swap AlphaMAT[0,0] with AlphaMAT[1,1]
-            return PolMAT,dipolesA,dipolesB
+            return PolMAT,dipolesA,dipolesB,dipoles_polA
     
     def get_TrEsp_Eng(self, index1, index2):
         """ Calculate TrEsp interaction energy for defects (defect-like 
@@ -1157,15 +1163,24 @@ class Dielectric:
         TrDip2 : numpy array of real (dimension 3)
             Total transition dipole for the first defect with environment effects 
             included calculated from heterodimer structure (in ATOMIC UNITS)
+        AllDipAE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(E) atomic polarizability
+        AllDipA_E : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(-E) atomic polarizability
+        AllDipBE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Beta(E,E) atomic polarizability
         '''
 
         # Get TrEsp interaction energy
         E_TrEsp = self.get_TrEsp_Eng(index1, index2)
         
         # Calculate polarization matrixes
-        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2 = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
-        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2 = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
-        PolarMat_Beta, dip_Beta1, dip_Beta2 = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)     
+        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2, AllDipAE = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
+        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2, AllDipA_E = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
+        PolarMat_Beta, dip_Beta1, dip_Beta2, AllDipBE = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)     
         
         # calculate new eigenstates and energies
         HH=np.zeros((2,2),dtype='f8')
@@ -1180,6 +1195,7 @@ class Dielectric:
         Energy,Coeff=np.linalg.eigh(HH)
         
         d_esp=np.sqrt( E_TrEsp**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2 )          # sqrt( (<A|V|B>)**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2  )
+        
         
         # Calculate interaction energies
         if approx==1.1:
@@ -1218,7 +1234,7 @@ class Dielectric:
                 Eshift1 = EnergyClass(Eshift1)
                 Eshift2 = EnergyClass(Eshift2)
             
-            return J_inter, Eshift1, Eshift2, TrDip1, TrDip2
+            return J_inter, Eshift1, Eshift2, TrDip1, TrDip2, AllDipAE, AllDipA_E, AllDipBE
         else:
             raise IOError('Unsupported approximation')
             
@@ -3088,7 +3104,7 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
     dBVB=mol_Elstat.get_EnergyShift(index=index1, charge=charge1_grnd)
 
     # calculate interaction energy and transition energy shifts      
-    Einter,Eshift1,Eshift2,TrDip1,TrDip2=mol_polar.get_HeterodimerProperties(index1,index2,0.0,0.0,dAVA=dAVA,dBVB=dBVB,order=order,approx=approx)
+    Einter,Eshift1,Eshift2,TrDip1,TrDip2,dipAE,dipA_E,dipBE,=mol_polar.get_HeterodimerProperties(index1,index2,0.0,0.0,dAVA=dAVA,dBVB=dBVB,order=order,approx=approx)
     
     if verbose:
         with energy_units("1/cm"):
@@ -3097,6 +3113,25 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
             print("dipole:",np.linalg.norm(TrDip1),np.linalg.norm(TrDip2))
             print("dAVA:",dAVA*conversion_facs_energy["1/cm"],"dBVB:",dBVB*conversion_facs_energy["1/cm"])
     
+    if MathOut:
+        if not os.path.exists("Pictures"):
+            os.makedirs("Pictures")
+        Bonds = GuessBonds(mol_polar.coor)
+        
+        if CoarseGrain in ["plane","C","CF"]:
+            at_type = ['C']*mol_polar.Nat
+        
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_AlphaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipAE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_Alpha_E.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipA_E,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_BetaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipBE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+
+        
 
     return Einter, Eshift1, Eshift2, TrDip1, TrDip2
         

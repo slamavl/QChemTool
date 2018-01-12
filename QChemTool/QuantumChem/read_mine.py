@@ -1960,6 +1960,9 @@ def read_AMBER_Energy_Scan(filename="EnergyScan.dat"):
     return Eng,q
 
 def read_amber_mdout(filename):
+
+# TODO: Write documentation
+    
     fid    = open(filename,'r')   # Open the file
     flines = fid.readlines()      # Read the WHOLE file into RAM
     fid.close()
