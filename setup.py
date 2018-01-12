@@ -95,7 +95,8 @@ setup(
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these
     # have to be included in MANIFEST.in as well.
-    package_data={'': ['QuantumChem/Classes/supporting_data/Atomic_Weights_NIST.html']},
+    package_data={'': ['QuantumChem/Classes/supporting_data/Atomic_Weights_NIST.html',
+                        'QuantumChem/Fortran/*']},
     include_package_data=True,
 
     # Although 'package_data' is the preferred approach, in some case you may
