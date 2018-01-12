@@ -58,8 +58,8 @@ def output_MD_statictic(res, inp, avrg, print_input=False, plot_stat=True, size_
         print("    Timestep:",inp["time_step"],"fs")
         MDlen = inp["Nsteps"]*inp["time_step"]/1000.0
         print("    Total MD length:",int(MDlen//1000),"ns and",MDlen%1000,"ps")
-        print("    Temperature:",inp["temperature"],"K   ( with gama:",inp["gamma_t"],")")
-        print("    Pressure:",inp["pressure"],"bar   ( with tau:",inp["taup"],")")
+        print("    Temperature:",inp["temperature"],"K   ( with gama:",inp["gamma_t"],"1/ps )")
+        print("    Pressure:",inp["pressure"],"bar   ( with tau:",inp["taup"],"ps )")
         print(" ")
     
     if plot_stat:
