@@ -2327,7 +2327,7 @@ class Dielectric:
 #==============================================================================
 # Definition of fuction for allocation of polarized molecules
 #==============================================================================
-def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs):
+def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,CoarseGrain="plane",**kwargs):
     ''' Read all informations needed for Dielectric class and transform system
     with single defect into this class. Useful for calculation of interaction 
     energies, transition site energy shifts and dipole changes.
@@ -2365,6 +2365,15 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
         ground state C-F corse grained atom of fluorographene with all others
         fluorographene corse grained atoms in ground state. Units are ATOMIC 
         UNITS (Hartree)
+    CoarseGrain : string (optional init = "plane")
+        Possible values are: "plane","C","CF". Define which level of coarse 
+        grained model should be used. If ``CoarseGrain="plane"`` then all atoms
+        are projected on plane defined by nvec and C-F atoms re treated as single
+        atom - for this case polarizabilities defined only in 2D by two numbers.
+        If ``CoarseGrain="C"`` then carbon atoms are center for atomic
+        polarizability tensor and again C-F are treated as a single atom. 
+        If ``CoarseGrain="CF"`` then center of C-F bonds are used as center for
+        atomic polarizability tensor and again C-F are treated as a single atom.
     verbose : logical (optional - init=False)
         If `True` aditional information about whole proces will be printed
     **kwargs : dictionary (optional)
@@ -2421,26 +2430,27 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
         raise IOError('There are repeating elements in index file')
 
     # Assign pol types and charges
-    PolType=[]
-    Polcharge=[]
-    PolCoor=[]
-    for ii in range(struc.nat):
-        if struc.at_type[ii]=='C' and (ii in index1):
-            Polcharge.append(charge[np.where(index1==ii)[0][0]])
-            PolType.append('C')
-            PolCoor.append(struc.coor._value[ii])
-        elif struc.at_type[ii]=='C':
-            PolType.append('CF')
-            Polcharge.append(0.0)
-            PolCoor.append(struc.coor._value[ii])
-    PolType=np.array(PolType)
-    Polcharge=np.array(Polcharge,dtype='f8')
-    PolCoor=np.array(PolCoor,dtype='f8')
-    
-    # project molecule whole system to plane defined by defect
-    nvec=np.array([0.0,0.0,1.0],dtype='f8')
-    center=np.array([0.0,0.0,0.0],dtype='f8')
-    PolCoor=project_on_plane(PolCoor,nvec,center)
+    PolCoor,Polcharge,PolType = _prepare_polar_structure_1def(struc,index1,charge,CoarseGrain,verbose=False)
+#    PolType=[]
+#    Polcharge=[]
+#    PolCoor=[]
+#    for ii in range(struc.nat):
+#        if struc.at_type[ii]=='C' and (ii in index1):
+#            Polcharge.append(charge[np.where(index1==ii)[0][0]])
+#            PolType.append('C')
+#            PolCoor.append(struc.coor._value[ii])
+#        elif struc.at_type[ii]=='C':
+#            PolType.append('CF')
+#            Polcharge.append(0.0)
+#            PolCoor.append(struc.coor._value[ii])
+#    PolType=np.array(PolType)
+#    Polcharge=np.array(Polcharge,dtype='f8')
+#    PolCoor=np.array(PolCoor,dtype='f8')
+#    
+#    # project molecule whole system to plane defined by defect
+#    nvec=np.array([0.0,0.0,1.0],dtype='f8')
+#    center=np.array([0.0,0.0,0.0],dtype='f8')
+#    PolCoor=project_on_plane(PolCoor,nvec,center)
     
     polar={}
     polar['AlphaE']=np.zeros((len(PolCoor),3,3),dtype='f8')
@@ -2659,6 +2669,85 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
                                         
     return mol_polar,index1,index2,charge1,charge2,struc
 
+def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False):
+    """
+    Type = "plane","C","CF","all_atom"
+    
+    """
+    if not Type in ["plane","C","CF","all_atom"]:
+        raise Warning("Unsupported type of coarse graining.")
+    
+    if verbose:
+        print(Type)
+        
+    # Molecule has to be centered and oriented first before this calculation is done 
+        
+    # Assign pol types and charges
+    PolType=[]
+    Polcharge=[]
+    PolCoor=[]
+    
+    if Type == "plane" or Type == "C": 
+        for ii in range(struc.nat):
+            if struc.at_type[ii]=='C' and (ii in index1):
+                Polcharge.append(charge1[np.where(index1==ii)[0][0]])
+                PolType.append('C')
+                PolCoor.append(struc.coor._value[ii])
+            elif struc.at_type[ii]=='C':
+                PolType.append('CF')
+                Polcharge.append(0.0)
+                PolCoor.append(struc.coor._value[ii])
+        PolType=np.array(PolType)
+        Polcharge=np.array(Polcharge,dtype='f8')
+        PolCoor=np.array(PolCoor,dtype='f8')
+        
+        if Type == "plane":
+            # project molecule whole system to plane defined by defect
+            center=np.array([0.0,0.0,0.0],dtype='f8')
+            PolCoor=project_on_plane(PolCoor,nvec,center)
+    
+    elif Type == "CF":
+        connectivity = []
+        for ii in range(struc.nat):
+            connectivity.append([])
+        if struc.bonds is None:
+            struc.guess_bonds()
+        for ii in range(len(struc.bonds)):
+            indx1=struc.bonds[ii][0]
+            at1=struc.at_type[indx1]
+            indx2=struc.bonds[ii][1]
+            at2=struc.at_type[indx2]
+            if at1=="C" and at2=="F":    
+                connectivity[indx1].append(indx2)
+            elif at2=="C" and at1=="F":
+                connectivity[indx2].append(indx1)
+            
+        for ii in range(struc.nat):
+            if struc.at_type[ii]=='C' and (ii in index1):
+                Polcharge.append(charge1[np.where(index1==ii)[0][0]])
+                PolType.append('C')
+                PolCoor.append(struc.coor._value[ii])
+
+            elif struc.at_type[ii]=='C':
+                PolType.append('CF')
+                Polcharge.append(0.0)
+                
+                # polarizabiliy center will be located at center of C-F bond (or F-C-F for border carbons)
+                count = 1
+                position = struc.coor._value[ii]
+                for jj in range(len(connectivity[ii])):
+                    position += struc.coor._value[ connectivity[ii][jj] ]
+                    count += 1
+                position = position / count
+                PolCoor.append(position)
+        
+        PolType=np.array(PolType)
+        Polcharge=np.array(Polcharge,dtype='f8')
+        PolCoor=np.array(PolCoor,dtype='f8')
+# TODO: add all atom representation
+    
+    return PolCoor,Polcharge,PolType
+
 def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,nvec=None,verbose=False):
     """
     Type = "plane","C","CF","all_atom"
@@ -2746,7 +2835,7 @@ def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,nvec=
 
 
 #TODO: Get rid of ShortName
-def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,**kwargs):
+def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
     ''' Calculate energy shifts and transition dipole shifts for single defect
     embeded in fluorographene
     
@@ -2841,7 +2930,7 @@ def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,Vin
         print('Calculation of interaction energy for:',ShortName)
     
     # read and prepare molecule
-    mol_polar,index1,charge,struc=prepare_molecule_1Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs)
+    mol_polar,index1,charge,struc=prepare_molecule_1Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,CoarseGrain=CoarseGrain,**kwargs)
 
     # calculate dAVA = <A|V|A>-<G|V|G>
     AditInfo={'Structure': struc,'index1': index1}
