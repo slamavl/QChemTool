@@ -1959,6 +1959,200 @@ def read_AMBER_Energy_Scan(filename="EnergyScan.dat"):
     print('Warning: Function read_AMBER_Energy_Scan uses ANGSTROMS as default units')
     return Eng,q
 
+def read_amber_mdout(filename):
+    fid    = open(filename,'r')   # Open the file
+    flines = fid.readlines()      # Read the WHOLE file into RAM
+    fid.close()
+    
+    section = None 
+    part = None
+    
+    step = []
+    time = []
+    temp = []
+    press = []
+    Etot = []
+    Ekin = []
+    Epot = []
+    Eelec = []
+    vdW = []
+    Vol = []
+    Dens = []
+
+    for line in flines:
+        if "   2.  CONTROL  DATA  FOR  THE  RUN" in line:
+            section = "input"
+        elif "   4.  RESULTS" in line:
+            section = "results"
+        elif "      A V E R A G E S   O V E R" in line:
+            section = "averages"
+            count = 0
+        elif "      R M S  F L U C T U A T I O N S" in line:
+            section =  "fluctuations"
+            count = 0
+        elif "   5.  TIMINGS" in line:
+            section = None
+        elif "Nature and format of output:" in line and section == "input":
+            part = "output"
+            count = 0
+        elif "Potential function:" in line and section == "input":
+            part = "potential"
+            count = 0
+        elif "Molecular dynamics:" in line and section == "input":
+            part = "MD"
+            count = 0
+        elif "Langevin dynamics temperature regulation:" in line and section == "input":
+            part = "Temperature"
+            count = 0
+        elif "Pressure regulation:" in line and section == "input":
+            part = "Pressure"
+            count = 0
+        elif " NSTEP = " in line and section == "results":
+            part = "Single_step_res"
+            thisline = line.split()
+            step.append(int(thisline[2]))
+            time.append(float(thisline[5])) # time in ps
+            temp.append(float(thisline[8])) # temperature in kelvins
+            press.append(float(thisline[11])) # pressure in bars
+            count = 1
+        else:
+            if section == "input":
+                thisline = line.split(",")
+                if part == "output":
+                    if count == 0:
+                        info = thisline[1].split()
+                        ntpr = int(info[2]) # frequency of write to mdout file
+                        info = thisline[3].split()
+                        ntwr = int(info[2]) # write frequency to restart file in steps
+                    elif count == 1:
+                        info = thisline[1].split()
+                        ntwx = int(info[2]) # frequency of write to trajectory file
+                    count += 1
+                    
+                elif part == "potential":
+                    if count == 2:
+                        info = thisline[1].split()
+                        cutoff = float(info[2]) # frequency of write to mdout file
+                    count += 1
+                
+                elif part == "MD":
+                    if count == 0:
+                        nstep = int(thisline[0].split()[2]) # number of MD steps 
+                    elif count == 1:
+                        dt = float(thisline[1].split()[2])
+                        dt = dt * 1000 # timestep for the simulation if fs
+                    count += 1
+
+                elif part == "Temperature":
+                    if count == 1:
+                        temperature = float(thisline[0].split()[2])
+                        try:
+                            gamma = float(thisline[2].split()[1])
+                        except:
+                            gamma = None
+                    count += 1
+                
+                elif part == "Pressure":
+                    if count == 1:
+                        pressure = float(thisline[0].split()[2]) # pressure in bar = 0.987atmosphere
+                        taup = float(thisline[2].split()[2]) # pressure relaxation time in ps
+                    count += 1 
+                    
+            elif section == "results" and part == "Single_step_res":
+                thisline = line.split()
+                if count == 1:
+                    Etot.append(float(thisline[2]))
+                    Ekin.append(float(thisline[5]))
+                    Epot.append(float(thisline[8]))
+                elif count == 3:
+                    vdW.append(float(thisline[-1]))
+                elif count == 4:
+                    Eelec.append(float(thisline[2]))
+                elif count == 5:
+                    Vol.append(float(thisline[8]))
+                elif count == 6:
+                    Dens.append(float(thisline[2]))
+                    count = -1
+                    part = None
+                count += 1
+                
+            elif section == "averages":
+                thisline = line.split()
+                if count == 2:
+                    temp_avrg = float(thisline[8]) # temperature in kelvins
+                    press_avrg = float(thisline[11]) # pressure in bars
+                elif count == 3:
+                    Etot_avrg = float(thisline[2])
+                    Ekin_avrg = float(thisline[5])
+                    Epot_avrg = float(thisline[8])
+                elif count == 5:
+                    vdW_avrg = float(thisline[-1])
+                elif count == 6:
+                    Eelec_avrg = float(thisline[2])
+                elif count == 7:
+                    Vol_avrg = float(thisline[8])
+                elif count == 8:
+                    Dens_avrg = float(thisline[2])
+                    section = None
+                    count = -1
+                count += 1
+                
+            elif section == "fluctuations":
+                thisline = line.split()
+                if count == 2:
+                    temp_rmsd = float(thisline[8]) # temperature in kelvins
+                    press_rmsd = float(thisline[11]) # pressure in bars
+                elif count == 3:
+                    Etot_rmsd = float(thisline[2])
+                    Ekin_rmsd = float(thisline[5])
+                    Epot_rmsd = float(thisline[8])
+                elif count == 5:
+                    vdW_rmsd = float(thisline[-1])
+                elif count == 6:
+                    Eelec_rmsd = float(thisline[2])
+                elif count == 7:
+                    Vol_rmsd = float(thisline[8])
+                elif count == 8:
+                    Dens_rmsd = float(thisline[2])
+                    section = None
+                    count = -1
+                count += 1
+                    
+    
+    step = numpy.array(step, dtype='i8')
+    time = numpy.array(time, dtype='f8')
+    temp = numpy.array(temp, dtype='f8')
+    press = numpy.array(press, dtype='f8')
+    Etot = numpy.array(Etot, dtype='f8')
+    Ekin = numpy.array(Ekin, dtype='f8')
+    Epot = numpy.array(Epot, dtype='f8')
+    Eelec = numpy.array(Eelec, dtype='f8')
+    vdW = numpy.array(vdW, dtype='f8')
+    Vol = numpy.array(Vol, dtype='f8')
+    Dens = numpy.array(Dens, dtype='f8')
+
+    inp = {"ntpr": ntpr, "ntwr": ntwr, "ntwx": ntwx, "cutoff": cutoff,
+           "Nsteps": nstep, "time_step": dt, "temperature": temperature,
+           "gamma_t": gamma, "pressure": pressure, "taup": taup}
+    
+    res = {"step": step, "time": time, "temperature": temp, "pressure": press,
+           "Etotal": Etot, "Ekinetic": Ekin, "Epotential": Epot, 
+           "Eelstat": Eelec, "EvdW": vdW, "volume": Vol, "density": Dens}
+    
+    avrg = {"temperature": temp_avrg, "pressure": press_avrg, 
+            "Etotal": Etot_avrg, "Ekinetic": Ekin_avrg, 
+            "Epotential": Epot_avrg, "Eelstat": Eelec_avrg, "EvdW": vdW_avrg,
+            "volume": Vol_avrg, "density": Dens_avrg}
+    
+    rmsd = {"temperature": temp_rmsd, "pressure": press_rmsd, 
+            "Etotal": Etot_rmsd, "Ekinetic": Ekin_rmsd, 
+            "Epotential": Epot_rmsd, "Eelstat": Eelec_rmsd, "EvdW": vdW_rmsd,
+            "volume": Vol_rmsd, "density": Dens_rmsd}
+    # temp_avrg, press_avrg, Etot_avrg, Ekin_avrg, Epot_avrg, vdW_avrg, Eelec_avrg, Vol_avrg, Dens_avrg
+    # temp_rmsd, press_rmsd, Etot_rmsd, Ekin_rmsd, Epot_rmsd, vdW_rmsd, Eelec_rmsd, Vol_rmsd, Dens_rmsd
+
+    return res, inp, avrg, rmsd
+
 def read_gaussian_esp(filename,output_charge=False,output_AtType=False):
     ''' Function for reading the output from gaussian Electrostatic potential
     calculation (with Pop=MK IOp(6/50=1) option)
