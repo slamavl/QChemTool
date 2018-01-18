@@ -2477,18 +2477,24 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
                               polar['AlphaE'],polar['Alpha_E'],polar['BetaE'],VinterFG)
     
     ZeroM=np.zeros((3,3),dtype='f8')
-    if kwargs:
+    
+    Polarizability = { 'CF': [AlphaE,Alpha_E,BetaE], 'CD': [AlphaE,Alpha_E,BetaE]}
+    
+    if "Alpha(E)" in kwargs.keys():
         AlphaE_def=kwargs['Alpha(E)']
         Alpha_E_def=kwargs['Alpha(-E)']
         BetaE_def=kwargs['Beta(E,E)']
-    if kwargs:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [AlphaE_def,Alpha_E_def,BetaE_def]}})
+        Polarizability['C'] = [AlphaE_def,Alpha_E_def,BetaE_def]
+    else :
+        Polarizability['C'] = [ZeroM,ZeroM,ZeroM]
+        
+    if "Fpolar" in kwargs.keys():
+        Polarizability['FC'] =  kwargs['Fpolar']
     else:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [ZeroM,ZeroM,ZeroM]}})
+        Polarizability['FC'] = [ZeroM,ZeroM,ZeroM]
+
+    mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': Polarizability})
+        
     return mol_polar,index1,charge,struc
 
 def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False, def2_charge=True,CoarseGrain="plane",**kwargs):
@@ -2670,19 +2676,24 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
                          polar['AlphaE'],polar['Alpha_E'],polar['BetaE'],VinterFG)
     
     ZeroM=np.zeros((3,3),dtype='f8')
-    if kwargs:
+    
+    Polarizability = { 'CF': [AlphaE,Alpha_E,BetaE], 'CD': [AlphaE,Alpha_E,BetaE]}
+    
+    if "Alpha(E)" in kwargs.keys():
         AlphaE_def=kwargs['Alpha(E)']
         Alpha_E_def=kwargs['Alpha(-E)']
         BetaE_def=kwargs['Beta(E,E)']
-    if kwargs:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [AlphaE_def,Alpha_E_def,BetaE_def]}})
+        Polarizability['C'] = [AlphaE_def,Alpha_E_def,BetaE_def]
+    else :
+        Polarizability['C'] = [ZeroM,ZeroM,ZeroM]
+        
+    if "Fpolar" in kwargs.keys():
+        Polarizability['FC'] =  kwargs['Fpolar']
     else:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [ZeroM,ZeroM,ZeroM]}})
-                                        
+        Polarizability['FC'] = [ZeroM,ZeroM,ZeroM]
+
+    mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': Polarizability})
+                          
     return mol_polar,index1,index2,charge1,charge2,struc
 
 def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False):
@@ -2721,6 +2732,22 @@ def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0
             # project molecule whole system to plane defined by defect
             center=np.array([0.0,0.0,0.0],dtype='f8')
             PolCoor=project_on_plane(PolCoor,nvec,center)
+    
+    elif Type == "all_atom":
+        PolCoor = struc.coor._value.copy()
+        for ii in range(struc.nat):
+            if struc.at_type[ii]=='C' and (ii in index1):
+                Polcharge.append(charge1[np.where(index1==ii)[0][0]])
+                PolType.append('C')
+            elif struc.at_type[ii]=='C':
+                PolType.append('CF')
+                Polcharge.append(0.0)
+            elif struc.at_type[ii]=='F':
+                PolType.append('FC')
+                Polcharge.append(0.0)
+        PolType=np.array(PolType)
+        Polcharge=np.array(Polcharge,dtype='f8')
+        PolCoor=np.array(PolCoor,dtype='f8')
     
     elif Type == "CF":
         connectivity = []
@@ -2802,6 +2829,25 @@ def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,nvec=
             # project molecule whole system to plane defined by defect
             center=np.array([0.0,0.0,0.0],dtype='f8')
             PolCoor=project_on_plane(PolCoor,nvec,center)
+            
+    elif Type == "all_atom":
+        PolCoor = struc.coor._value.copy()
+        for ii in range(struc.nat):
+            if struc.at_type[ii]=='C' and (ii in index1):
+                Polcharge.append(charge1[np.where(index1==ii)[0][0]])
+                PolType.append('C')
+            elif struc.at_type[ii]=='C' and (ii in index2):
+                Polcharge.append(charge2[np.where(index2==ii)[0][0]])
+                PolType.append('C')
+            elif struc.at_type[ii]=='C':
+                PolType.append('CF')
+                Polcharge.append(0.0)
+            elif struc.at_type[ii]=='F':
+                PolType.append('FC')
+                Polcharge.append(0.0)
+        PolType=np.array(PolType)
+        Polcharge=np.array(Polcharge,dtype='f8')
+        #print(len(PolCoor),len(PolType))
             
 # TODO: TEST this assignment of polarizability centers
     elif Type == "CF":
@@ -3120,6 +3166,8 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
         
         if CoarseGrain in ["plane","C","CF"]:
             at_type = ['C']*mol_polar.Nat
+        elif CoarseGrain == "all_atom":
+            at_type = struc.at_type.copy()
         
         mat_filename = "".join(['Pictures/Polar_',ShortName,'_AlphaE.nb'])
         params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipAE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
