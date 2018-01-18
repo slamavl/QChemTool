@@ -171,7 +171,7 @@ def output_MD_statictic(res, inp, avrg, print_input=False, plot_stat=True, size_
         
 # TODO: Add kinetic energy with velocity distribution with optional Maxwell-Boltzmann distribution
                 
-def analize_amber_mdout(filename,size_RA=10):
+def analyze_amber_mdout(filename,size_RA=10):
     from ..read_mine import read_amber_mdout
     
     res, inp, avrg, rmsd = read_amber_mdout(filename)

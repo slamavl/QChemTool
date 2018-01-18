@@ -279,7 +279,7 @@ class DensityGrid(PositionUnitsManaged):
         
         '''
         
-        vec=np.array(dx,dy,dz)
+        vec=np.array([dx,dy,dz],dtype='f8')
         self.origin=self.origin+vec        
         self.coor.move(dx,dy,dz)
     

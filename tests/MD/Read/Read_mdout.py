@@ -15,6 +15,7 @@ if 0:
     output_MD_statictic(res, inp, avrg, print_input=True, plot_stat=True, size_RA=10)
     
 else:
-    from QChemTool.QuantumChem.Classes.mdinfo import analize_amber_mdout
+    from QChemTool.QuantumChem.Classes.mdinfo import analyze_amber_mdout
     
-    analize_amber_mdout("03_Pres.out", size_RA=10)
+    #analyze_amber_mdout("03_Pres.out", size_RA=10)
+    analyze_amber_mdout("D:/slamav/MD/Perylene-Chloroform/05_Prod.out", size_RA=10)
