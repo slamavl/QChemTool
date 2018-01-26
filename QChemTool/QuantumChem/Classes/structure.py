@@ -409,18 +409,23 @@ class Structure(PositionUnitsManaged):
 
         # Prepare
         if is_AtType:
-            indxH=np.argwhere(self.at_type=='H').T[0]
-            nH=len(indxH)
-        test=cKDTree(self.coor._value)
-        Bonds=test.query_pairs(bond_length,output_type='ndarray')
+            indxH = np.argwhere(self.at_type=='H').T[0]
+            nH = len(indxH)
+        test = cKDTree(self.coor._value)
+        Bonds = test.query_pairs(bond_length,output_type='ndarray')
         # Rapair bonds between two hydrogens
         if is_AtType:
             if nH>1:
+                list_to_delete = []
                 for ii in range(len(Bonds)):
-                    if self.at_type[Bonds[ii,0]]=='H':
-                        if self.at_type[Bonds[ii,1]]=='H':
-                            np.delete(Bonds,ii,axis=0)
-        self.bonds=Bonds
+                    if self.at_type[Bonds[ii,0]] == 'H':
+                        if self.at_type[Bonds[ii,1]] == 'H':
+                            list_to_delete.append(ii)
+        
+                for ii in reversed(list_to_delete):
+                    Bonds = np.delete(Bonds,ii,axis=0)
+        
+        self.bonds = Bonds
     
     def count_fragments(self,verbose=False):
         ''' Divide the structure into individual units between which there is
