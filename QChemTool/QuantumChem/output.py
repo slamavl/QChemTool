@@ -6,6 +6,7 @@ Created on Mon Mar 21 10:29:14 2016
 """
 import numpy as np
 from copy import deepcopy
+from QChemTool.General.UnitsManager import position_units
 
 def OutputToPDB(Coord,AtType,filename='OutputPython.pdb'):
     ''' Write coordinates to pbd file
@@ -854,21 +855,21 @@ def outputComplex2Mead(Complex,grid,outputfolder,typ='Transition'):
     ''' create complex.pqr file '''
     outname="".join([outputfolder,'complex.pqr'])
     with open(outname, "wt") as f:
-        counter=0
-        for ii in range(len(Complex)):
-            struc=deepcopy(Complex[ii])
-            struc.coor.Bohr2Angst()
-            for jj in range(struc.nat):
-                counter+=1
-                f.write("{:4}".format('ATOM'))
-                f.write("{:>7d}".format(counter))
-                f.write('  ')
-                AtName_unq="".join([struc.at_type[jj],str(jj+1)])
-                f.write("{:6}".format(AtName_unq))
-                f.write("{:5}".format(Complex[ii].name))
-                f.write("{:6d}".format(ii+1))
-                f.write("{:9.3f}{:9.3f}{:9.3f}".format(struc.coor.value[jj,0],struc.coor.value[jj,1],struc.coor.value[jj,2]))
-                f.write("{:>7.3f}{:>8.3f}\n".format(0.000,struc.vdw_rad[jj]))
+        with position_units("Angstrom"):
+            counter=0
+            for ii in range(len(Complex)):
+                struc=deepcopy(Complex[ii])
+                for jj in range(struc.nat):
+                    counter+=1
+                    f.write("{:4}".format('ATOM'))
+                    f.write("{:>7d}".format(counter))
+                    f.write('  ')
+                    AtName_unq="".join([struc.at_type[jj],str(jj+1)])
+                    f.write("{:6}".format(AtName_unq))
+                    f.write("{:5}".format(Complex[ii].name))
+                    f.write("{:6d}".format(ii+1))
+                    f.write("{:9.3f}{:9.3f}{:9.3f}".format(struc.coor.value[jj,0],struc.coor.value[jj,1],struc.coor.value[jj,2]))
+                    f.write("{:>7.3f}{:>8.3f}\n".format(0.000,struc.vdw_rad[jj]))
     f.close()  
     
     
