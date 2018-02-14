@@ -87,6 +87,7 @@ def potential_dipole(p,R,eps=1):
     Notes
     ------- 
     '''
+    corr_zeros=True
     
     if np.ndim(R)==1:
         if len(R)!=3:
@@ -114,11 +115,13 @@ def potential_dipole(p,R,eps=1):
         if p.shape[0]!=R.shape[0] or p.shape[1]!=R.shape[2] :
             raise IOError('For calculation of potential at a point you have to input all dipoles')
         norm=np.linalg.norm(R, axis=2)   # Norm has now dimension of NxM
-        
         PP = np.tile(p,(R.shape[1],1,1))
         PP = np.swapaxes(PP,0,1)   # P has now dimension NxMx3
         pot=np.sum(R*PP,axis=-1)
-        pot=np.divide(pot,norm**3)
+        if corr_zeros:
+            pot=np.divide(pot,norm**3, out=np.zeros_like(pot), where=norm!=0) # This should produce zeros when dividing by zero
+        else:
+            pot=np.divide(pot,norm**3)
         pot=np.sum(pot,axis=0)
         pot=pot/eps
         
