@@ -12,7 +12,7 @@ from .Classes.general import Coordinate
 
 def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
                      List=None, MaxInt=100, q_tol=1e-7, NoHrestr=True, 
-                     constrains=[], Freeze=[], Type = "Ground"):
+                     constrains=[], Freeze=[], Type = "Ground", verbose=False):
     """ Function for restrained ESP fit of atomic center charges from 
     electrostatic potential
     
@@ -180,17 +180,29 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
     CT = C.T
     CT = np.vstack( (CT, np.zeros((C.shape[0],C.shape[0]),dtype="f8") ) )
     
-    
     # Build the left side matrix of the system of linear equations Ajk
     A = np.zeros((Ncharge, Ncharge),dtype="f8")
     b = np.zeros(Ncharge,dtype="f8")
+    
+    if verbose:
+        print("Building distance matrix")
+        
+    # Set distance matrix
+    R2=np.power(R[:,:,0],2)+np.power(R[:,:,1],2)+np.power(R[:,:,2],2)    
+    RR=1/np.sqrt(R2)
+    
+    if verbose:
+        print("Building matrix for the system of linear equations")
+    
     for ii in range(nESP):
         for kk in range(Ncharge):
-            rik = 1.0 / np.linalg.norm(coor[kk]-ESP_coor[ii])
-            A[kk,kk] += 2*(rik**2)
+            #rik = 1.0 / np.linalg.norm(coor[kk]-ESP_coor[ii])
+            rik = RR[kk,ii]
+            A[kk,kk] += 2*(rik*rik)
             b[kk] += 2 * ESP_pot[ii] * rik
             for jj in range(kk+1,Ncharge):
-                rij = 1.0 / np.linalg.norm(coor[jj]-ESP_coor[ii])
+                #rij = 1.0 / np.linalg.norm(coor[jj]-ESP_coor[ii])
+                rij = RR[jj,ii]
                 A[jj,kk] += 2*rij*rik
     # symmetrization of A matrix
     for kk in range(Ncharge):
@@ -201,16 +213,25 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
     A = np.vstack( (A, C) )
     A = np.hstack( (A, CT) )
     b = np.append(b,d)
+    
+    if verbose:
+        print("... all matrix build")
 
     # zero out restrains for hydrogens if required
     if NoHrestr:
         H_indx = np.where(at_type == "H")[0]
         q_rest[H_indx] = 0.0
     
+    if verbose:
+        print("Solving harmonic initial guess")
+    
     # Calculate initial guess with harmonic restrains
     A_work,b_work = add_harmonic_restrain(A,b,q0,q_rest,Ncharge)
     res = np.linalg.solve(A_work,b_work)
     q = res[:Ncharge]  # initial charges for SCF procedure with hyperbolic restrains
+    
+    if verbose:
+        print("... harmonic calculation completed")
     
     # Results for harmonic restrains
     q_harmonic = q.copy()
