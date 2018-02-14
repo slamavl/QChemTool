@@ -61,7 +61,7 @@ class Electrostatics:
 
             for ii in range(len(index)):
                 charge_tmp[ii] = self.charge[index[ii]]
-                self.charge[ii] = charge[ii]
+                self.charge[index[ii]] = charge[ii]
         
         # ground state interaction
         Def_charge=[]
@@ -71,8 +71,16 @@ class Electrostatics:
         # Separate defect and environment
         for ii in range(self.Nat):
             if self.at_type[ii]=='CD':
-                Def_charge.append(self.charge[ii])
-                Def_coor.append(self.coor[ii])
+                if index is not None:
+                    if ii in index:
+                        Env_charge.append(self.charge[ii])
+                        Env_coor.append(self.coor[ii])
+                    else:
+                        Def_charge.append(self.charge[ii])
+                        Def_coor.append(self.coor[ii])
+                else:
+                    Def_charge.append(self.charge[ii])
+                    Def_coor.append(self.coor[ii])
             else:
                  Env_charge.append(self.charge[ii])
                  Env_coor.append(self.coor[ii])
@@ -266,7 +274,7 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     
     Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type) 
     
-    return Elstat_mol,index1,charge_grnd
+    return Elstat_mol,index1,charge_grnd, charge_exct
 
 def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False,**kwargs):
     ''' Read all informations needed for Electrostatics class and transform system
@@ -460,7 +468,9 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
             elif ii in index1:
                 Elstat_Type.append('CD')
             elif ii in index2:
-                Elstat_Type.append('C')
+                Elstat_Type.append('CD')
+            else:
+                raise IOError("Wrong number of bonds for carbon atom")
         elif struc.at_type[ii]=='F':
             Elstat_Type.append('FC')
     
@@ -471,10 +481,13 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     
     # Check if defect carbons were correctly determined:
     for ii in range(struc.nat):
-        if Elstat_Type[ii]=='CD' and ( not (ii in index1)):
-            raise IOError('Wrongly determined defect atoms')
-        if Elstat_Type[ii]=='C' and ( not (ii in index2)):
-            raise IOError('Wrongly determined defect atoms')
+        if Elstat_Type[ii]=='CD':
+            if not (ii in index1 or ii in index2):
+                raise IOError('Wrongly determined defect atoms')
+#        if Elstat_Type[ii]=='CD' and ( not (ii in index1)):
+#            raise IOError('Wrongly determined defect atoms')
+#        if Elstat_Type[ii]=='C' and ( not (ii in index2)):
+#            raise IOError('Wrongly determined defect atoms')
             
     # Asign charges for fluorographene:
     Elstat_Charge=np.zeros(struc.nat,dtype='f8')
@@ -494,8 +507,8 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         Elstat_Charge[index2[ii]]=charge_exct2[ii]-charge_grnd2[ii]
     
     Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type)
-    
-    return Elstat_mol,index1,index2,charge_grnd1,charge_grnd2
+        
+    return Elstat_mol,index1,index2,charge_grnd1,charge_grnd2,charge_exct1,charge_exct2
 
 #def _CalculateEshift(filenames,ShortName,index_all,Eshift_QCH,Eshift_all,FG_charges,AlphaE,Alpha_E,BetaE,nvec_all,order=82,ChargeType='qchem',verbose=False):
 #    ''' Calculates transition energy shift for molecule embeded in polarizable 
