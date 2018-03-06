@@ -169,7 +169,7 @@ def RESP_fit_charges(struc,ESP_coor,ESP_pot, Q_tot=0.0, restr=0.001, H_fit=True,
         for jj in range(1,len(constrains[ii])):
             cc = np.zeros(Ncharge,dtype='f8')
             cc[constrains[ii][0]] = 1
-            if constrains[ii][jj] > 0 :
+            if constrains[ii][jj] >= 0 :
                 cc[constrains[ii][jj]] = -1
             else:
                 cc[-constrains[ii][jj]] = 1
