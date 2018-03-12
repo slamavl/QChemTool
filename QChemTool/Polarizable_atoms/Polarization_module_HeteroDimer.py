@@ -302,8 +302,10 @@ class Dielectric:
         
     def _dR_BpA(self,index1,index2,charge1,charge2,typ,eps=1):
         ''' function which calculate derivation of interaction energy between defect
-        A and defect B defined by index:
-        d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)).E^{(A)}(Rn)]
+        A and defect B defined by index: \n
+        d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)).E^{(A)}(Rn)] \n
+        which is -interaction energy ( for derivation of energy, Hamiltonian,
+        we need to take negative value of the result)
         
         Parameters
         ----------
@@ -324,20 +326,20 @@ class Dielectric:
 
         Notes
         ----------
-        **After exiting the function transition charges are placed on both defects
-        and not only on the first**
+        **After exiting the function transition charges are the same as in the
+        begining**
         
         For calculation of derivation of ApA use ``_dR_BpA(index1,index1,
         charge1,charge1,typ,eps=1)`` where charges in molecule Dielectric class
         have to be nonzero for defect with ``index1`` **and zero for the other
-        defect if present**. If not first swap the the defects with 
-        ``_swap_atoms(index1,index2)`` and than use as described earlier. 
-        The same is true for the second defect, where you only replace index1 
-        for index2.
+        defect if present**.
         '''
 
 # TODO: Add posibility to read charges from self.charges: charge1 = self.charges[index1] and charge2 = self.charges[index2]
 # TODO: Read polarizabilities on the defects and when potting charges to zero put also zero polarizabilities       
+        
+        charge1_orig = self.charge[index1] 
+        charge2_orig = self.charge[index2] 
         
         res=np.zeros((self.Nat,3),dtype='f8')
         
@@ -366,15 +368,17 @@ class Dielectric:
         
         # Place transition charges only on the first defect (defect A)
         if index1==index2:
-            if (charge1==charge2).all():
-                self.charge[index1] = charge1
-            else:
-                raise Warning("For calculation of d_ApA same charges have to be inputed.")
+            self.charge[index1] = charge1
+            # The folowing is only for polarization with transition density and not polarization by ground state charges and interaction with excited ones
+#            if (charge1==charge2).all():
+#                self.charge[index1] = charge1
+#            else:
+#                raise Warning("For calculation of d_ApA same charges have to be inputed.")
         else:
             self.charge[index1] = charge1
             self.charge[index2] = 0.0
         
-        # calculating derivation according to atom displacement from defect B
+        # calculating derivation according to defect B atom displacement
         Q=np.meshgrid(self.charge,self.charge)[0]   # in columns same charges
         ELF=np.zeros((self.Nat,self.Nat,3),dtype='f8')
         
@@ -408,10 +412,12 @@ class Dielectric:
         
         # Place transition charges only on the second defect (defect B)
         if index1==index2:
-            if (charge1==charge2).all():
-                self.charge[index2] = charge2
-            else:
-                raise Warning("For calculation of d_ApA same charges have to be inputed.")
+            self.charge[index2] = charge2
+            # viz previous case
+#            if (charge1==charge2).all():
+#                self.charge[index2] = charge2
+#            else:
+#                raise Warning("For calculation of d_ApA same charges have to be inputed.")
         else:
             self.charge[index1] = 0.0
             self.charge[index2] = charge2
@@ -450,15 +456,17 @@ class Dielectric:
 #        self._swap_atoms(index1,index2)
         
         # Place transition charges back on both defects
-        self.charge[index1] = charge1
-        self.charge[index2] = charge2
-        
+        self.charge[index1] = charge1_orig
+        self.charge[index2] = charge2_orig
+
         return res.reshape(3*self.Nat)
     
     def _dR_BppA(self,index1,index2,charge1,charge2,typ,eps=1):
         ''' function which calculate derivation of second order interaction energy
-        between defect A and defect B defined by index1 resp. index2:
-        d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)). Sum_{n'} T(Rn-Rn').(1/2*Polarizability(n')).E^{(A)}(Rn)]
+        between defect A and defect B defined by index1 resp. index2: \n
+        ``d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)). Sum_{n'} T(Rn-Rn').(1/2*Polarizability(n')).E^{(A)}(Rn)]`` \n
+        which is -interaction energy ( for derivation of energy, Hamiltonian,
+        we need to take negative value of the result)
         
         Parameters
         ----------
@@ -641,6 +649,167 @@ class Dielectric:
         self.charge[index2] = charge2
         
         return res.reshape(3*self.Nat)
+    
+    def _dR_ApEnv(self,index1,charge1,env_coor,env_charge,typ,eps=1):
+        ''' function which calculate derivation of 'interaction energy' between defect
+        A defined by index and environment atoms: \n
+        d/dR[Sum_{n} E^{(A)}(Rn).(1/2*Polarizability(n)).E^{(env)}(Rn)] \n
+        which is -interaction energy ( for derivation of energy, Hamiltonian,
+        we need to take negative value of the result)
+        
+        Parameters
+        ----------
+        index1 : list or numpy.array of integer (dimension N_def1_atoms)
+            Atomic indexes of atoms which coresponds to first defect
+        charge1 : numpy array of real (dimension N_def1_atoms)
+            Vector of charges (transition, excited, ground, ...) for every atom of 
+            defect A (listed in ``index1``)
+        env_coor : numpy.array of real (dimension Nat x 3)
+            Coordninates for every environment atom.
+        env_charge : numpy array or list of real (dimension Nat)
+            Atomic ESP charges for every atom in the environment
+        typ : str ('AlphaE','Alpha_E','BetaEE')
+            Specifies which polarizability is used for calculation of induced
+            atomic dipoles
+        eps : real (optional - init=1.0)
+            Relative dielectric polarizability of medium where the dipoles and 
+            molecule is present ( by default vacuum with relative permitivity 1.0)
+            
+        Return
+        ----------
+        res
+        res_env
+        
+
+        Notes
+        ----------
+        **After exiting the function transition charges are the same as in the
+        begining**
+        '''
+
+# TODO: Add posibility to read charges from self.charges: charge1 = self.charges[index1] and charge2 = self.charges[index2]
+# TODO: Read polarizabilities on the defects and when potting charges to zero put also zero polarizabilities       
+        
+        charge1_orig = self.charge[index1]
+        charge_env_orig = env_charge[index1]
+        
+        env_Nat = env_coor.shape[0]
+        res=np.zeros((self.Nat,3),dtype='f8')
+        res_env=np.zeros((env_Nat,3),dtype='f8')
+        MASK = np.zeros(self.Nat,dtype="bool")
+        MASK[index1] = True
+        
+        # Place charges on the defect (defect A)
+        self.charge[index1] = charge1
+        # zero charges for defect in the environment 
+        env_charge[index1] = 0.0
+        
+        # calculation of tensors with interatomic distances for polarizability class
+        R=np.zeros((self.Nat,self.Nat,3),dtype='f8') # mutual distance vectors
+        P=np.zeros((self.Nat,3),dtype='f8')
+        for ii in range(self.Nat):
+            for jj in range(ii+1,self.Nat):
+                R[ii,jj,:]=self.coor[ii]-self.coor[jj]
+                R[jj,ii,:]=-R[ii,jj,:]
+        RR=np.sqrt(np.power(R[:,:,0],2)+np.power(R[:,:,1],2)+np.power(R[:,:,2],2))  # mutual distances
+        unit=np.diag([1]*self.Nat)
+        RR=RR+unit   # only for avoiding ddivision by 0 for diagonal elements     
+        RR3=np.power(RR,3)
+        RR5=np.power(RR,5)
+        
+        # calculate tensor with interactomic distances between environmnet and polarizability class atoms
+        #R_env2pol=np.zeros((self.Nat,env_Nat,3),dtype='f8') # mutual distance vectors
+        R_pol = np.tile(self.coor,(env_Nat,1,1))
+        R_pol = np.swapaxes(R_pol,0,1)
+        R_env = np.tile(env_coor,(self.Nat,1,1))
+        R_env2pol = R_pol - R_env
+        RR_env2pol = np.linalg.norm(R_env2pol,axis=2)
+        RR3_env2pol = np.power(RR_env2pol,3)
+        RR5_env2pol = np.power(RR_env2pol,5)
+        
+        # definition of T tensor
+        T=np.zeros((self.Nat,self.Nat,3,3),dtype='f8') # mutual distance vectors
+        for ii in range(3):
+            T[:,:,ii,ii]=1/RR3[:,:]-3*np.power(R[:,:,ii],2)/RR5
+            for jj in range(ii+1,3):
+                T[:,:,ii,jj] = -3*R[:,:,ii]*R[:,:,jj]/RR5
+                T[:,:,jj,ii] = T[:,:,ii,jj]
+        for ii in range(self.Nat):
+            T[ii,ii,:,:]=0.0        # no self interaction of atom i with atom i
+            
+        # definition of T tensor between environment and the polarizability class
+        T_pol2env=np.zeros((env_Nat,self.Nat,3,3),dtype='f8') # mutual distance vectors
+        for ii in range(3):
+            T_pol2env[:,:,ii,ii]=1/(RR3_env2pol.T + np.identity(self.Nat))[:,:]-3*np.power(R_env2pol[:,:,ii],2).T/(RR5_env2pol.T+np.identity(self.Nat))
+            for jj in range(ii+1,3):
+                T_pol2env[:,:,ii,jj] = -3*R_env2pol[:,:,ii].T*R_env2pol[:,:,jj].T/(RR5_env2pol.T + np.identity(self.Nat))
+                T_pol2env[:,:,jj,ii] = T_pol2env[:,:,ii,jj]
+        for ii in range(self.Nat):
+            T_pol2env[ii,ii,:,:]=0.0        # no self interaction of atom i with atom i
+        
+        # calculating derivation according to environment atom displacement
+        Q=np.meshgrid(self.charge,self.charge)[0]   # in columns same charges
+        ELF=np.zeros((self.Nat,self.Nat,3),dtype='f8')
+        
+        # calculate electric field generated by the first defect (defect A)
+        for jj in range(3):
+            ELF[:,:,jj]=(Q/RR3)*R[:,:,jj]   # ELF[i,j,:]  is electric field at position i generated by atom j 
+        for ii in range(self.Nat):
+            ELF[ii,ii,:]=np.zeros(3,dtype='f8')
+        
+        # calculate induced dipoles induced by the first defect (defect A)
+        ELFV=np.array(np.sum(ELF,axis=1),dtype='f8')             # ELFV[i,:]   is electric field at position of atom i
+        for ii in range(self.Nat):
+            P[ii,:]=np.dot(self.polar[typ][ii],ELFV[ii,:])
+        
+        for ii in range(3):
+            for n in range(self.nat):
+                if not MASK[n]:
+                    res[n,ii] += np.dot(np.dot(env_charge,T_pol2env[:,n,ii,:]),P[n,:])
+        
+        ELFV=np.zeros((env_Nat,3),dtype='f8')
+        for ii in range(3):
+            for jj in range(3):
+                ELFV[:,ii]+=np.dot(T_pol2env[:,:,ii,jj],P[:,jj])
+        
+        for ii in range(3):
+            res_env[:,ii] -= env_charge * ELFV[:,ii]
+        
+        # calculate induced dipoles induced by the environment ESP atomic charges
+        Q=np.meshgrid(env_charge,self.charge)[0]   # in columns same charges - in rows environment charges
+        ELF=np.zeros((self.Nat,env_Nat,3),dtype='f8')
+        for jj in range(3):
+            ELF[:,:,jj]=( Q/(RR3_env2pol+np.identity(self.Nat)) )*R_env2pol[:,:,jj]   # ELF[i,j,:]  is electric field at position i generated by atom j 
+        for ii in range(self.Nat):
+            ELF[ii,ii,:]=np.zeros(3,dtype='f8')
+        
+        ELFV=np.array(np.sum(ELF,axis=1),dtype='f8')             # ELFV[i,:]   is electric field at position of atom i
+        for ii in range(self.Nat):
+            P[ii,:]=np.dot(self.polar[typ][ii],ELFV[ii,:])  # induced dipoles by environment charge distribution
+        
+        P[index1,:]=0.0 # just for sure
+        
+        for n in range(self.Nat):
+            if not MASK[n]:
+                for jj in range(len(index1)):
+                    res[n,:]+=charge1[jj]*np.dot(T[index1[jj],n,:,:],P[n,:])
+        
+        
+        # calculating derivation according to atom displacement from defect A
+        ELFV=np.zeros((self.Nat,3),dtype='f8')
+        for ii in range(3):
+            for jj in range(3):
+                ELFV[:,ii]+=np.dot(T[:,:,ii,jj],P[:,jj])
+        for ii in range(len(index1)):
+            res[index1[ii],:] -= charge1[ii]*ELFV[index1[ii],:]
+        
+        
+        
+        # Place original charges back defects and the environment atoms
+        self.charge[index1] = charge1_orig
+        env_charge[index1] = charge_env_orig
+        
+        return res.reshape(3*self.Nat),res_env.reshape(3*self.Nat)
         
 
 # TODO: Add possibility for NN = -err to calculate dipoles until convergence is reached
@@ -1611,6 +1780,95 @@ class Dielectric:
 #                print(Eshift.value,dAVA.value,res_Energy['E_pol2_Alpha(E)'].value,res_Energy['E_pol2_Alpha(-E)'].value,res_Energy['E_pol2_static_(exct-grnd)'].value,res_Energy['Pol2-env_static_(exct-grnd)'].value)
             
             return Eshift, res_Energy, TrDip
+        else:
+            raise IOError('Unsupported approximation')
+            
+    
+    def get_SingleDefect_derivation(self, gr_charge, ex_charge, FG_elstat, struc, index, E01, order=2, approx=1.1):
+        ''' Calculate derivative of single defect property
+        
+        '''
+
+        # Set initial charges
+        tr_charge = self.charge[index] 
+        FG_charge_orig = FG_elstat.charge[index]
+        FG_charge = FG_elstat.charge.copy()
+        FG_charge[index] = 0.0
+        dAVA, dR_dAVA = FG_elstat.get_EnergyShift_and_Derivative()
+        
+        # calculate interaction between transition charges and environment atoms
+        FG_elstat.charge[index] = tr_charge
+        Eelstat_trans=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index] = FG_charge_orig
+        
+        # Set distance matrix - polarizable atoms x electrostatic atoms
+        R_elst = np.tile(struc.coor._value,(self.Nat,1,1))
+        R_pol = np.tile(self.coor,(struc.nat,1,1))
+        R_pol_elst = (R_elst - np.swapaxes(R_pol,0,1))            # R[ii,jj,:]=self.coor[jj]-self.coor[ii]
+        # TODO: Maybe also exclude connected fluorinesto atoms ii 
+        for ii in range(self.Nat):
+            R_pol_elst[ii,ii,:] = 0.0   # self interaction is not permited in potential calculation
+        
+        # Negative values are there because we want to calculate dE/dR and not d(El(Rn)*1/2*Alpha*El(Rn))/dR
+        # calculate first order derivation - Polar1_Alpha(E)
+        dR_pol1_AlphaE = -self._dR_BpA(index, index, tr_charge, tr_charge, 'AlphaE')
+        # calculate first order derivation - Polar1_Alpha(-E)
+        dR_pol1_Alpha_E = -self._dR_BpA(index, index, tr_charge, tr_charge, 'Alpha_E')
+        # calculate second order derivation - Polar2_Alpha(E)
+        dR_pol2_AlphaE = -self._dR_BppA(index, index, tr_charge, tr_charge, 'AlphaE')
+        # calculate second order derivation - Polar2_Alpha(-E)
+        dR_pol2_Alpha_E = -self._dR_BppA(index, index, tr_charge, tr_charge, 'Alpha_E')
+        # calculate first order derivation - Polar1_static for excited and ground charges
+        dR_pol1_static_grnd = -self._dR_BpA(index, index, gr_charge, gr_charge, 'Alpha_st')
+        dR_pol1_static_exct = -self._dR_BpA(index, index, ex_charge, ex_charge, 'Alpha_st')
+        # calculate second order derivation - Polar2_static for excited and ground charges
+        dR_pol2_static_grnd = -self._dR_BppA(index, index, gr_charge, gr_charge, 'Alpha_st')
+        dR_pol2_static_exct = -self._dR_BppA(index, index, ex_charge, ex_charge, 'Alpha_st')
+        # calculate first order derivation - Polar1_Beta(E,E)
+        dR_pol1_BetaEE = -self._dR_BpA(index, index, tr_charge, tr_charge, 'BetaEE')
+        # calculate first order derivation of Palar1-env with static polarizability
+        dR_pol1_env_static_ex_gr, dR_pol1_env_static_ex_gr_env = -self._dR_ApEnv(index,ex_charge-gr_charge,FG_elstat.coor,FG_charge,'Alpha_st')
+        
+        # this could be maybe left out:
+        dR_pol1_env_AlphaE_tr, dR_pol1_env_AlphaE_tr_env = -self._dR_ApEnv(index,tr_charge,FG_elstat.coor,FG_charge,'AlphaE')
+        dR_pol1_env_Alpha_E_tr, dR_pol1_env_Alpha_E_tr_env = -self._dR_ApEnv(index,tr_charge,FG_elstat.coor,FG_charge,'Alpha_E')
+        dR_pol1_env_static_tr, dR_pol1_env_static_tr_env = -self._dR_ApEnv(index,tr_charge,FG_elstat.coor,FG_charge,'Alpha_st')
+        
+        # calculate Beta polarizability 
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = tr_charge
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        Polar1_Beta_EE = self._get_interaction_energy(index,charge=tr_charge,debug=False)
+        
+# TODO: Add derivation of pol-env
+        
+# TODO: Split environment contribution and polarizable atoms contribution - both different dimensions
+        if approx==1.1:
+            # Calculate transition energy shift
+            dR_Eshift_env = dR_dAVA
+            dR_Eshift = (dR_pol1_AlphaE + dR_pol2_AlphaE)
+            dR_Eshift -= (dR_pol1_Alpha_E + dR_pol2_Alpha_E)
+            dR_Eshift -= (self.VinterFG - dAVA)*dR_pol1_BetaEE
+            dR_Eshift_env += dR_dAVA*Polar1_Beta_EE
+            dR_Eshift += (dR_pol1_static_exct + dR_pol2_static_exct)
+            dR_Eshift -= (dR_pol1_static_grnd + dR_pol2_static_grnd)
+            dR_Eshift += dR_pol1_env_static_ex_gr
+            dR_Eshift_env += dR_pol1_env_static_ex_gr_env
+
+            # this could be maybe left out
+            dR_Eshift += Eelstat_trans/E01._value * ( 2*dR_pol1_env_AlphaE_tr +
+                                                     4*dR_pol1_env_static_tr +
+                                                     2*dR_pol1_env_Alpha_E_tr)
+            dR_Eshift_env += Eelstat_trans/E01._value * ( 2*dR_pol1_env_AlphaE_tr_env +
+                                                     4*dR_pol1_env_static_tr_env +
+                                                     2*dR_pol1_env_Alpha_E_tr_env)
+            
+            
+            
+#            Eshift += 2*(Polar2_env_Alpha_st_ex - Polar1_env_Alpha_st_ex - Polar2_env_Alpha_st_gr + Polar1_env_Alpha_st_gr)
+
+
+            return dR_Eshift, dR_Eshift_env
         else:
             raise IOError('Unsupported approximation')
     
@@ -5197,6 +5455,8 @@ def Calc_SingleDef_FGprop_new(filenames,ShortName,index_all,E01,AlphaE,Alpha_E,B
     AditInfo={'Structure': struc,'index1': index1,'Output_exct': True}
     mol_Elstat,index,charge_grnd,charge_exct=ElStat_PrepareMolecule_1Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
     dAVA=mol_Elstat.get_EnergyShift()
+#    dAVA2, dAVA_R = mol_Elstat.get_EnergyShift_and_Derivative()
+#    print(dAVA,dAVA2,dAVA-dAVA2)
 
     # calculate transition energy shifts and transition dipole change      
     # res_Energy, res_Pot, TrDip = mol_polar._TEST_Compare_SingleDefectProperties(charge,charge_grnd,charge_exct,struc,index1,dAVA=dAVA,order=order,approx=approx)
