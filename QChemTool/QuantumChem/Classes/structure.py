@@ -13,7 +13,7 @@ import networkx as nx
 from os import path
 
 
-from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf
+from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf, read_AMBER_prepc
 from ..read_mine import read_TrEsp_charges as read_TrEsp
 from .general import Coordinate,Grid 
 from ...General.UnitsManager import position_units,PositionUnitsManaged,energy_units
@@ -610,6 +610,64 @@ class Structure(PositionUnitsManaged):
         Aditional_info=AditionalInfo[5]
 
         return Name,Charge_method,Aditional_info
+    
+    
+    def load_prepc(self,filename,state='Ground'):
+        """ Loads all structure information from AMBER preps file. In present stage
+        it can be called only from not initialized structure.
+        
+        Parameters
+        -----------
+        filename : string
+            Name of the input file including the path if needed
+        state : string (optional init = 'Ground')
+            Which charges are present in prepc file. If ``state='Ground'`` it is
+            assumed that charges in prepc file correspond to ground state 
+            (default), therefore they are loaded in ``self.esp_grnd``. 
+            If ``state='Excited'`` it is assumed that charges in prepc file 
+            correspond to excited state, therefore they are loaded in
+            ``self.esp_exct``. If ``state='Transition'`` it is assumed that 
+            charges in prepc file are transition charges, therefore they are 
+            loaded in ``self.esp_trans``.
+        
+        Returns
+        ---------
+        indxlist of integers specifying position of every atom in original file
+        from which prepc file was generated. For every atom type INDX is from 1
+        to number of atoms of that type.
+
+        """
+        
+        Coor,Charge,AtType,FFType,MolName,indx_orig = read_AMBER_prepc(filename)
+        with position_units('Angstrom'): 
+            if not self.init:
+                self.nat=len(AtType)      
+                self.coor=Coordinate(Coor)                
+                self.ff_type=np.copy(FFType)
+                if state=='Ground':
+                    self.esp_grnd=np.array(Charge,dtype='f8')
+                elif state=='Excited':
+                    self.esp_exct=np.array(Charge,dtype='f8')
+                elif state=='Transition':
+                    self.esp_trans=np.array(Charge,dtype='f8')
+                at_type=[]
+                for jj in range(self.nat):
+                    at_type.append(''.join([i for i in AtType[jj] if not i.isdigit()]))
+                    at_type[jj]=at_type[jj].capitalize()
+                self.at_type=at_type.copy()
+                
+                self.ncharge=np.zeros(self.nat,dtype='i4')
+                for ii in range(self.nat):
+                    self.ncharge[ii]=get_atom_indx(self.at_type[ii])
+                self.mass=np.zeros(self.nat,dtype='f8')
+                for ii in range(self.nat):
+                    self.mass[ii]=get_mass(self.at_type[ii])
+                self.init=True
+                self.name = MolName
+            else:
+                raise Warning('Adding the information from mol2 file into existing structure is not yet supported')
+            
+        return indx_orig
     
     def load_gjf(self,filename):
         """ Loads all structure information from Gaussian gjf input file.
