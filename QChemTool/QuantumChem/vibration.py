@@ -44,7 +44,8 @@ def NormalModes_mol(mol,verbal=False):
     Freqcm1,RedMass,ForcesCm1Agstrom2,InternalToCartesian,CartesianToInternal,Units
     
     Freqcm1 : numpy.array (dimension=number of normal modes=Nmodes)
-        Frequency of normal modes in inverse centimeters (actualy wavenumber
+        Frequency of normal modes ( = frequency/speed_of_light = nu where nu is 
+        wavenumber) in inverse centimeters (actualy wavenumber
         but in gaussian it is denoted as frequency) 
     RedMass : numpy.array (dimension=Nmodes)
         Reduced masses in Atomic Mass Units (AMU) in vector
@@ -320,6 +321,9 @@ def NormalModes_mol(mol,verbal=False):
     sign=numpy.sign(val)
     Freqcm1=numpy.multiply(numpy.sqrt(numpy.abs(val))*InternalToInvcm,sign)
     ForcesHaBohr2=numpy.multiply(val,RedMass)
+    #print(Freqcm1)
+    #print( numpy.sqrt(ForcesHaBohr2/RedMass/1822.8886154)/(2*numpy.pi)*conversion_facs_energy["1/cm"] )
+    
     #ForcesCm1Agstrom2=ForcesHaBohr2*const.HaToInvcm/(const.BohrToAngstrom*const.BohrToAngstrom)
     ForcesCm1Agstrom2=ForcesHaBohr2*conversion_facs_energy["1/cm"]/(conversion_facs_position["Angstrom"]**2)
     # conversion_facs_position
@@ -334,6 +338,8 @@ def NormalModes_mol(mol,verbal=False):
         print(ForcesCm1Agstrom2)
         print(' ')    
             
+    # frequency in gaussian is wavenumber (frequency/speed_of_light)
+        
     return Freqcm1,RedMass,ForcesCm1Agstrom2,InternalToCartesian,CartesianToInternal,Units
 
 def Proces_AMBER_Nmodes(AM_geom,AM_Freq,AM_NormalModes,At_Mass):
