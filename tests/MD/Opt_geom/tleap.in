@@ -1,0 +1,7 @@
+source leaprc.gaff 
+loadAmberPrep init_structure.prepc 
+loadamberparams FGrph_reord.frcmod 
+saveoff FGR FGrph_reord.lib 
+saveamberparm FGR FGrph_reord.prmtop FGrph_reord.inpcrd 
+savepdb FGR FGrph_reord.pdb 
+quit 

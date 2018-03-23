@@ -1,0 +1,7 @@
+source leaprc.gaff 
+loadAmberPrep nab_input.prepc 
+loadamberparams nab_input.frcmod 
+saveoff FGR nab_input.lib 
+saveamberparm FGR nab_input.prmtop nab_input.inpcrd 
+savepdb FGR nab_input.pdb 
+quit 
