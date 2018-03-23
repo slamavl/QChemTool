@@ -13,8 +13,8 @@ from ..QuantumChem.Classes.structure import Structure
 from ..QuantumChem.calc import identify_molecule
 from ..QuantumChem.read_mine import read_TrEsp_charges
 from ..QuantumChem.interaction import charge_charge
-from ..QuantumChem.positioningTools import project_on_plane, CenterMolecule
-from ..General.units import conversion_facs_energy
+from ..QuantumChem.positioningTools import project_on_plane, CenterMolecule, fit_plane
+from ..General.units import conversion_facs_energy, conversion_facs_mass
 from .Electrostatics_module import PrepareMolecule_1Def as ElStat_PrepareMolecule_1Def
 from .Electrostatics_module import PrepareMolecule_2Def as ElStat_PrepareMolecule_2Def
 from ..General.Potential import potential_charge, potential_dipole
@@ -2731,6 +2731,93 @@ class Dielectric:
             return J_inter, Eshift1, Eshift2, TrDip1, TrDip2, AllDipAE1, AllDipA_E1, AllDipBE1, res
         else:
             raise IOError('Unsupported approximation')
+            
+    
+    def get_gmm(self,gr_charge, ex_charge, FG_elstat, struc, index, E01, int2cart, freq, red_mass, order=2, approx=1.1, CoarseGrain='C'):
+        """ Calciulate coupling strength of the site energy to atomic coordinates. 
+        The reult is dimensionless coupling strength and resulting spectral
+        density is defined as \sum_xi {gmm_xi*gmm_xi*\delta(omega-omega_xi)}
+        
+        Parameters
+        ----------
+        gr_charge : numpy array of real (dimension Natoms_defect)
+            Ground state ESP charges for every atom from the defect
+        ex_charge : numpy array of real (dimension Natoms_defect)
+            Excited state ESP charges for every atom from the defect
+        FG_elstat : Electrostatics class
+            Electrostatic definition of the system (atomic charges, positions, 
+            ...). It is possible to use it for calculation of electrostatic
+            interaction energy between defect and environment
+        struc : Structure class
+            Structure definition of the molecule (needed for calculation of 
+            derivative of the hamiltonian with respect to atomic coordinates).
+        index : list of integer (dimension Natoms_defect)
+            Indexes of all atoms from the defect (starting from 0)
+        E01 : Energy class
+            Transition energy of isolated defect without environment (calculated
+            by quantum chemistry). Needed for calculation of derivative of
+            hamiltonian with respect to atomic coordinates
+        int2cart : numpy array of real (dimension 3*Nat x Nnormal_modes)
+            transformation matrix from internal to cartesian coordinates.
+            In columns there are normalized normal mode vectors in cartesian 
+            coordinates ordered as [dx1,dy1,dz1,dx2,dy2,dz2,dx3,...]. Norm
+            of the whole vector is 1.0 and it is dimensionless
+        freq : numpy array of real (dimension Nnormal_modes)
+            Wavenumbers of individual normal modes (frequency/speed of light 
+            - default output from gaussian and AMBER - in both called frequency)
+            in inverse centimeters 
+        red_mass : numpy array of real (dimension Nnormal_modes)
+            Reduced masses for every normal mode in AMU (atomic mass units)
+        order : integer (optional - init = 2)
+            Specify how many SCF steps shoudl be used in calculation of induced
+            dipoles - according to the used model it should be 2
+        CoarseGrain : string (optional - init = "C")
+            Possible values are: "plane","C","CF" and "all_atom". Define which 
+            level of coarse grained model should be used. If ``CoarseGrain="plane"``
+            then all atoms are projected on plane defined by nvec and C-F atoms
+            are treated as single atom - for this case polarizabilities defined
+            only in 2D by two numbers. If ``CoarseGrain="C"`` then carbon atoms
+            are center for atomic polarizability tensor and again C-F are treated
+            as a single atom. If ``CoarseGrain="CF"`` then center of C-F bonds 
+            are used as center for atomic polarizability tensor and again C-F 
+            are treated as a single atom. If ``CoarseGrain="all_atom"`` all atoms
+            are used as centers polarizability tensor.
+        approx : real (optional - init=1.1)
+            Specifies which approximation should be used.
+            
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+        
+        """
+        
+        dR_Hmm,dR_env_Hmm = self.get_SingleDefect_derivation(gr_charge, ex_charge, FG_elstat, struc, index, E01, order=2, approx=1.1)
+        
+        # freq is actualy wavenumber (= frequency/speed_of_light).
+        # therefore angluar frequency omega in atomic units = 100/(2*Rydberg_inf) wavenumber in [cm-1]
+        omega_au = freq/conversion_facs_energy["1/cm"]
+        RedMass_au = red_mass/conversion_facs_mass
+        # in atomic units hbar = 1.0, m_e = 1.0, elementary_charge = 1.0, 1/(4*pi*eps_0) = 1.0, speed_of_light = 137 ( fine-structure constant)
+        
+        # pick only carbon atoms from eigenvectors of normal modes (assume that fluorine atoms doesn't influent the result) - in needed
+        if CoarseGrain in ["C","plane"] :
+            indxC = np.where(np.array(struc.at_type) == 'C')
+            index = np.zeros((len(indxC),3),dtype='i8')
+            for ii in range(3):
+                index[:,ii] = index*3+ii
+            index.reshape(3*len(indxC))
+            int2cart_loc = int2cart[index,:]
+        else:
+            int2cart_loc = int2cart.copy()
+            
+        g_mm = np.dot(int2cart_loc.T,dR_Hmm) + np.dot(int2cart.T,dR_env_Hmm)
+        g_mm = g_mm/(np.sqrt(omega_au*omega_au*omega_au))
+        g_mm = g_mm/(2*np.sqrt(RedMass_au))
+        
+        return g_mm
+        
 # =============================================================================
 # OLD AND NOT USED FUNCTION - WILL BE DELETED IN FUTURE
 # =============================================================================
@@ -3992,17 +4079,21 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
         mol_polar.polar['Alpha_st'] = np.zeros((len(PolCoor),3,3),dtype='f8')
         
         if CoarseGrain=="all_atom":
-            Alpha_static=ZeroM
+            Alpha_static=kwargs["Alpha_static"]
+            AlphaF_static=kwargs["AlphaF_static"]
         else:
             Alpha_static=kwargs["Alpha_static"]
+            AlphaF_static=ZeroM
         
         for ii in range(len(PolType)):
             if PolType[ii]=='CF':
                 mol_polar.polar['Alpha_st'][ii]=Alpha_static
+            elif PolType[ii]=='FC':
+                mol_polar.polar['Alpha_st'][ii]=AlphaF_static
         
     return mol_polar,index1,charge,struc
 
-def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False, def2_charge=True,CoarseGrain="plane",**kwargs):
+def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False, def2_charge=True,CoarseGrain="plane",**kwargs):
     ''' Read all informations needed for Dielectric class and transform system
     with two same defects into this class. Useful for calculation of interaction 
     energies, transition site energy shifts and dipole changes.
@@ -4050,9 +4141,6 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
         ground state C-F corse grained atom of fluorographene with all others
         fluorographene corse grained atoms in ground state. Units are ATOMIC 
         UNITS (Hartree)
-    nvec : numpy.array (dimension 3) (optional - init=np.array([0.0,0.0,1.0],dtype='f8'))
-        Normal vector to the fluorographene plane - needed for projection
-        of fluorographene atoms into a 2D plane
     def2_charge : logical (init = True)
         Specifies if transition charges should be placed also to the second 
         defect
@@ -4137,7 +4225,7 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
         raise IOError('There are repeating elements in index file')
 
     # Assign pol types
-    PolCoor,Polcharge,PolType = _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,CoarseGrain,nvec=nvec)
+    PolCoor,Polcharge,PolType = _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,CoarseGrain)
 #    PolType=[]
 #    Polcharge=[]
 #    PolCoor=[]
@@ -4216,7 +4304,7 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
                           
     return mol_polar,index1,index2,charge1,charge2,struc
 
-def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False):
+def _prepare_polar_structure_1def(struc,index1,charge1,Type,verbose=False):
     """
     Type = "plane","C","CF","all_atom"
     
@@ -4250,8 +4338,10 @@ def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0
         
         if Type == "plane":
             # project molecule whole system to plane defined by defect
-            center=np.array([0.0,0.0,0.0],dtype='f8')
-            PolCoor=project_on_plane(PolCoor,nvec,center)
+            nvec_test,origin_test = fit_plane(PolCoor)
+            PolCoor=project_on_plane(PolCoor,nvec_test,origin_test)
+            #center=np.array([0.0,0.0,0.0],dtype='f8')
+            #PolCoor=project_on_plane(PolCoor,nvec,center)
     
     elif Type == "all_atom":
         PolCoor = struc.coor._value.copy()
@@ -4311,7 +4401,7 @@ def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0
     
     return PolCoor,Polcharge,PolType
 
-def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,nvec=None,verbose=False):
+def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,verbose=False):
     """
     Type = "plane","C","CF","all_atom"
     
@@ -4347,8 +4437,10 @@ def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,nvec=
     
         if Type == "plane":
             # project molecule whole system to plane defined by defect
-            center=np.array([0.0,0.0,0.0],dtype='f8')
-            PolCoor=project_on_plane(PolCoor,nvec,center)
+            nvec_test,origin_test = fit_plane(PolCoor)
+            PolCoor=project_on_plane(PolCoor,nvec_test,origin_test)
+            #center=np.array([0.0,0.0,0.0],dtype='f8')
+            #PolCoor=project_on_plane(PolCoor,nvec,center)
             
     elif Type == "all_atom":
         PolCoor = struc.coor._value.copy()
@@ -4532,7 +4624,7 @@ def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,Vin
 
 #TODO: Get rid of ShortName
 #TODO: Input vacuum transition energies
-def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
     ''' Calculate interaction energies between defects embeded in polarizable atom
     environment for all systems given in filenames. Possibility of calculate 
     transition energy shifts and transition dipoles.
@@ -4661,7 +4753,7 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
         print('Calculation of interaction energy for:',ShortName)
     
     # read and prepare molecule
-    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
+    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
     
     # # calculate dAVA = <A|V|A>-<G|V|G> and dBVB = <B|V|B>-<G|V|G>
     AditInfo={'Structure': struc,'index1': index1,'index2':index2}
@@ -4703,7 +4795,7 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
 
     return Einter, Eshift1, Eshift2, TrDip1, TrDip2
 
-def TEST_Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+def TEST_Calc_Heterodimer_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
     ''' Calculate interaction energies between defects embeded in polarizable atom
     environment for all systems given in filenames. Possibility of calculate 
     transition energy shifts and transition dipoles.
@@ -4832,7 +4924,7 @@ def TEST_Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,A
         print('Calculation of interaction energy for:',ShortName)
     
     # read and prepare molecule
-    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
+    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
     
     if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
         raise Warning("Transition charges are not the same - after creation.")
@@ -4938,7 +5030,7 @@ def TEST_Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,A
 
     return Einter, Eshift1, Eshift2, TrDip1, TrDip2
 
-def Calc_Heterodimer_FGprop_new(filenames,ShortName,E1,E2,index_all,nvec_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=2,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+def Calc_Heterodimer_FGprop_new(filenames,ShortName,E1,E2,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=2,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
     ''' Calculate interaction energies between defects embeded in polarizable atom
     environment for all systems given in filenames. Possibility of calculate 
     transition energy shifts and transition dipoles.
@@ -5067,7 +5159,7 @@ def Calc_Heterodimer_FGprop_new(filenames,ShortName,E1,E2,index_all,nvec_all,Alp
         print('Calculation of interaction energy for:',ShortName)
     
     # read and prepare molecule
-    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
+    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
     
     if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
         raise Warning("Transition charges are not the same - after creation.")
