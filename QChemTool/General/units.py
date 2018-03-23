@@ -84,6 +84,10 @@ conversion_facs_length = {
 }
 
 
+conversion_facs_mass = {
+        "AU": 1.0,
+        "AMU": const.physical_constants["electron mass in u"][0]
+}
 
 
 #
