@@ -19,7 +19,7 @@ from .general import Coordinate,Grid
 from ...General.UnitsManager import position_units,PositionUnitsManaged,energy_units
 from ...General.types import UnitsManaged
 from ..positioningTools import RotateAndMove, RotateAndMove_1, CenterMolecule
-from ..output import OutputToXYZ, OutputTOmol2
+from ..output import OutputToXYZ, OutputTOmol2, OutputToPDB
 
 nist_file = path.join(path.dirname(path.realpath(__file__)),
                       'supporting_data/Atomic_Weights_NIST.html')
@@ -110,6 +110,8 @@ class Structure(PositionUnitsManaged):
         Reads the molecule from pdb file into structure
     load_mol2 :
         Reads the molecule from mol2 file into structure
+    load_prepc :
+        Reads the molecule from AMBER prepc file into structure
     load_gjf :
         Reads the molecule from Gaussian input file into structure
     read_TrEsp_charges :
@@ -119,6 +121,8 @@ class Structure(PositionUnitsManaged):
         Output structure into mol2 file needed for AMBER MD simulation
     output_to_xyz :
         Output structure into xyz file
+    output_to_pdb :
+        Output structure into pdb file
     get_FF_types :
         Assign GAFF forcefield types to the atoms. So far only working for 
         fluorographene systes.
@@ -843,6 +847,20 @@ class Structure(PositionUnitsManaged):
         
         with position_units('Angstrom'):
             OutputToXYZ(self.coor.value,self.at_type,filename)
+    
+    def output_to_pdb(self,filename='Molecule.pdb'):
+        """ Create pdb file for the structure with unique atom names.
+        
+        Parameters
+        -----------
+        filename : string (optional init = 'Molecule.xyz')
+            Name of the output file including the path if needed (including the 
+            .xyz suffix)
+        """
+        
+        with position_units('Angstrom'):
+            OutputToPDB(self.coor.value,self.at_type,filename=filename)
+        
     
     def get_FF_types(self):
         ''' 
