@@ -1115,6 +1115,51 @@ def project_on_plane(coor,nvec,origin):
     
     return ProjCoor
 
+
+def fit_plane(coor):
+    ''' Find normal vector of plane and point in plane, which best fit the 
+    specified coordinates. 
+    
+    Parameters
+    ----------
+    coor : numpy.array of real (dimension Nx3 where N=1,2,3...)
+        Matrix of atomic coordinates
+        
+    Returns
+    -------
+     nvec : numpy.array or list of real (dimension 3)
+        normal vector of plane to which we would like to project
+    origin : numpy.array or list of real (dimension 3)
+        Point which define plane (point in plane)
+        
+    Notes
+    -------
+        Original coordinates remains unchanged.
+    '''
+    
+    # calculate variance in every dimension:
+    variance = numpy.var(coor,axis=0)
+    indx = numpy.argmin(variance) # in this dimension there will be highest normal vectorcontribution
+    
+    # setup matrix for parameters calculation
+    B = -coor[:,indx]
+    A = coor.copy()
+    A[:,indx] = 1.0
+    
+    # solve the equations for the plane
+    A_inv = numpy.dot( numpy.linalg.inv(numpy.dot(A.T,A)), A.T)
+    vec = numpy.dot(A_inv,B)
+    
+    # obtain normal vector and one point in the plane
+    d = vec[indx]
+    vec[indx] = 1.0
+    origin = numpy.zeros(3,dtype='f8')
+    origin[indx] = -d
+    norm = numpy.linalg.norm(vec)
+    nvec = vec/norm
+    
+    return nvec, origin
+
 def prepare_alkene(Dim,Position=numpy.array([0.0,0.0,0.0]),vec_x=numpy.array([1.0,0.0,0.0]),vec_y=numpy.array([0.0,1.0,0.0])):
     ''' Function to generate carbon position for model alkene
     
