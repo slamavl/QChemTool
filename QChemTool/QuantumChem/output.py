@@ -30,20 +30,24 @@ def OutputToPDB(Coord,AtType,filename='OutputPython.pdb'):
     if np.shape(Coord)[0]!=len(AtType):
          raise IOError('Wrong dimension of Coord or Atom types, try input Coord.T')
     NAtom=len(AtType)
+    types_unq = np.unique(AtType)
+    count = {}
+    for ii in types_unq:
+        count[ii] = 0
     with open(filename, "wt") as f:
         # Vypis hlavicky
         f.write("CRYST1    0.000    0.000    0.000  90.00  90.00  90.00 P 1           1 \n") # so far only molecules without PBC box are inmplemented
         counter=0        
         for ii in range(NAtom):
-            counter=counter+1
+            count[AtType[ii]] += 1
             f.write("ATOM")
             f.write("{:7d}".format(ii+1))
             if counter<100:
                 f.write("{:>3}".format(AtType[ii]))
-                f.write("{:<3d}".format(counter))
+                f.write("{:<3d}".format( count[AtType[ii]] ))
             else:
                 f.write("{:>2}".format(AtType[ii]))
-                f.write("{:<4d}".format(counter))
+                f.write("{:<4d}".format( count[AtType[ii]] ))
 #            f.write("{:<4d}".format(counter))
             f.write("NAM X   1")
             f.write("{:12.3f}{:8.3f}{:8.3f}{:6.2f}{:6.2f}\n".format(Coord[ii,0],Coord[ii,1],Coord[ii,2],0.0,0.0))
