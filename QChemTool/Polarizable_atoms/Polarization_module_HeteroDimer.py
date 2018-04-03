@@ -1721,11 +1721,13 @@ class Dielectric:
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
         self.charge[index] = ex_charge
         self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        dip1_Ast_ex = np.sum(self.dipole,axis=0)
         Potential = potential_dipole(self.dipole,R)
         Polar1_env_Alpha_st_ex = np.dot(FG_charge,Potential)
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
         self.charge[index] = gr_charge
         self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        dip1_Ast_gr = np.sum(self.dipole,axis=0)
         Potential = potential_dipole(self.dipole,R)
         Polar1_env_Alpha_st_gr = np.dot(FG_charge,Potential)
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
@@ -1741,6 +1743,15 @@ class Dielectric:
         Polar1_Beta_EE = self._get_interaction_energy(index,charge=tr_charge,debug=False)
         #pot1_dipole_betaEE_tr = potential_dipole(self.dipole,R)
         
+        # needed for transition dipole
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = gr_charge
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        dip1_AE_gr = np.sum(self.dipole,axis=0)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = ex_charge
+        self._calc_dipoles_All('Alpha_E',NN=1,eps=1,debug=False)
+        dip1_A_E_ex = np.sum(self.dipole,axis=0)
   
         # Set the variables to initial state
         self.dipole = np.zeros((self.Nat,3),dtype='f8')
@@ -1757,8 +1768,12 @@ class Dielectric:
 
             
             # Calculate transition dipoles for every defect
-            TrDip = TrDip_TrEsp*(1 + Polar1_Beta_EE/4) + dip_AlphaE + dip_Alpha_E
+            TrDip = TrDip_TrEsp*(1 + Polar1_Beta_EE/2 - 2*(Eelstat_trans/E01._value)*(Eelstat_trans/E01._value) )
+            TrDip += dip_AlphaE + dip_Alpha_E
             TrDip -= (self.VinterFG - dAVA)*dip_Beta
+            TrDip += (Eelstat_trans/E01._value)*(dip1_Ast_gr - dip1_Ast_ex)
+            TrDip += (Eelstat_trans/E01._value)*(dip1_AE_gr - dip1_A_E_ex)
+            # TODO: Add term for polarization of environment by environment itself
             
             # Change to energy class
             with energy_units('AU'):
