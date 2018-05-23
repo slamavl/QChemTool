@@ -87,6 +87,7 @@ def potential_dipole(p,R,eps=1):
     Notes
     ------- 
     '''
+    corr_zeros=True
     
     if np.ndim(R)==1:
         if len(R)!=3:
@@ -114,11 +115,13 @@ def potential_dipole(p,R,eps=1):
         if p.shape[0]!=R.shape[0] or p.shape[1]!=R.shape[2] :
             raise IOError('For calculation of potential at a point you have to input all dipoles')
         norm=np.linalg.norm(R, axis=2)   # Norm has now dimension of NxM
-        
         PP = np.tile(p,(R.shape[1],1,1))
         PP = np.swapaxes(PP,0,1)   # P has now dimension NxMx3
         pot=np.sum(R*PP,axis=-1)
-        pot=np.divide(pot,norm**3)
+        if corr_zeros:
+            pot=np.divide(pot,norm**3, out=np.zeros_like(pot), where=norm!=0) # This should produce zeros when dividing by zero
+        else:
+            pot=np.divide(pot,norm**3)
         pot=np.sum(pot,axis=0)
         pot=pot/eps
         
@@ -146,9 +149,32 @@ def ElField_charge(q,R,eps=1):
         Electric field at given point in atomic units [Hartree/(e*Bohr)]
     '''
     
-    norm=np.sqrt(np.dot(R,R))
-    elf=q/((norm**3)*eps)*R
-    return elf
+    if np.ndim(R)==1:
+        norm=np.sqrt(np.dot(R,R))
+        elf=q/((norm**3)*eps)*R
+        return elf
+    if np.ndim(R)==2:
+        if len(R[0])!=3:
+            raise IOError('Vectors have to be in format Npoints x 3 for set of 3D vectors')
+        norm = np.linalg.norm(R, axis=1)
+        norm = np.swapaxes( np.tile(norm,(3,1)), 0, 1)
+        q2 = np.swapaxes( np.tile(q,(3,1)), 0, 1)
+        elf = q2*R / ((norm**3)*eps)
+        return elf
+    if np.ndim(R)==3:
+        if len(R[0,0])!=3:
+            raise IOError('Vectors have to be in format Npoints x Mpoints x 3 for set of 3D vectors')
+        if len(q)!=R.shape[0]:
+            raise IOError('For calculation of potential at a point you have to input all charges')
+        norm=np.linalg.norm(R, axis=2)   # Norm has now dimension of NxM
+        norm = np.rollaxis(np.tile(norm,(3,1,1)),0,3)
+        temp = R/norm**3
+        elf = np.zeros((temp.shape[1],temp.shape[2]),dtype='f8')
+        elf[:,0] = np.dot(q,temp[:,:,0])
+        elf[:,1] = np.dot(q,temp[:,:,1])
+        elf[:,2] = np.dot(q,temp[:,:,2])
+        elf = elf/eps
+        return elf
     
 def ElField_dipole(p,R,eps=1):
     ''' function which calculate electric field at position R from point dipole p.

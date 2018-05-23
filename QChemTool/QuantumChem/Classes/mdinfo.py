@@ -42,7 +42,9 @@ def output_MD_statictic(res, inp, avrg, print_input=False, plot_stat=True, size_
     """ Output MD setting and outputs time evolution and statistic of most
     important quantities
     """
-    
+
+# TODO: write documentation
+
 # TODO: Add possibility to read different Running average size for different quantities
     RA = {"temperature": size_RA, "pressure": 50, "density": size_RA,
           "Etotal": size_RA, "Epotential": size_RA, "Ekinetic": size_RA }
@@ -58,8 +60,8 @@ def output_MD_statictic(res, inp, avrg, print_input=False, plot_stat=True, size_
         print("    Timestep:",inp["time_step"],"fs")
         MDlen = inp["Nsteps"]*inp["time_step"]/1000.0
         print("    Total MD length:",int(MDlen//1000),"ns and",MDlen%1000,"ps")
-        print("    Temperature:",inp["temperature"],"K   ( with gama:",inp["gamma_t"],")")
-        print("    Pressure:",inp["pressure"],"bar   ( with tau:",inp["taup"],")")
+        print("    Temperature:",inp["temperature"],"K   ( with gama:",inp["gamma_t"],"1/ps )")
+        print("    Pressure:",inp["pressure"],"bar   ( with tau:",inp["taup"],"ps )")
         print(" ")
     
     if plot_stat:
@@ -169,7 +171,7 @@ def output_MD_statictic(res, inp, avrg, print_input=False, plot_stat=True, size_
         
 # TODO: Add kinetic energy with velocity distribution with optional Maxwell-Boltzmann distribution
                 
-def analize_amber_mdout(filename,size_RA=10):
+def analyze_amber_mdout(filename,size_RA=10):
     from ..read_mine import read_amber_mdout
     
     res, inp, avrg, rmsd = read_amber_mdout(filename)

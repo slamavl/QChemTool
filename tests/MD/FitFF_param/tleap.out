@@ -1,0 +1,157 @@
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/prep to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/lib to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/parm to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/cmd to search path.
+-f: Source tleap.in.
+
+Welcome to LEaP!
+(no leaprc in search path)
+Sourcing: ./tleap.in
+----- Source: /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff
+----- Source of /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff done
+Log file: ./leap.log
+Loading parameters: /home/slamav/Software/AMBER/amber14/dat/leap/parm/gaff.dat
+Reading title:
+AMBER General Force Field for organic molecules (Version 1.7, Nov 2013)
+Loading Prep file: ./init_structure.prepc
+Loading parameters: ./FGrph_reord.frcmod
+Reading force field modification type file (frcmod)
+Reading title:
+remark goes here
+ Creating FGrph_reord.lib
+Building topology.
+Building atom parameters.
+Checking Unit.
+Building topology.
+Building atom parameters.
+Building bond parameters.
+Building angle parameters.
+Building proper torsion parameters.
+Building improper torsion parameters.
+old PREP-specified impropers:
+ total 0 improper torsions applied
+ 0 improper torsions in old prep form
+Building H-Bond parameters.
+Incorporating Non-Bonded adjustments.
+Not Marking per-residue atom chain types.
+Marking per-residue atom chain types.
+ (no restraints)
+Writing pdb file: FGrph_reord.pdb
+	Quit
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/prep to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/lib to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/parm to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/cmd to search path.
+-f: Source tleap.in.
+
+Welcome to LEaP!
+(no leaprc in search path)
+Sourcing: ./tleap.in
+----- Source: /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff
+----- Source of /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff done
+Log file: ./leap.log
+Loading parameters: /home/slamav/Software/AMBER/amber14/dat/leap/parm/gaff.dat
+Reading title:
+AMBER General Force Field for organic molecules (Version 1.7, Nov 2013)
+Loading Prep file: ./init_structure.prepc
+Loading parameters: ./FGrph_reord.frcmod
+Reading force field modification type file (frcmod)
+Reading title:
+remark goes here
+Building topology.
+Building atom parameters.
+Checking Unit.
+Building topology.
+Building atom parameters.
+Building bond parameters.
+Building angle parameters.
+Building proper torsion parameters.
+Building improper torsion parameters.
+old PREP-specified impropers:
+ total 0 improper torsions applied
+ 0 improper torsions in old prep form
+Building H-Bond parameters.
+Incorporating Non-Bonded adjustments.
+Not Marking per-residue atom chain types.
+Marking per-residue atom chain types.
+ (no restraints)
+Writing pdb file: FGrph_reord.pdb
+	Quit
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/prep to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/lib to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/parm to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/cmd to search path.
+-f: Source tleap.in.
+
+Welcome to LEaP!
+(no leaprc in search path)
+Sourcing: ./tleap.in
+----- Source: /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff
+----- Source of /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff done
+Log file: ./leap.log
+Loading parameters: /home/slamav/Software/AMBER/amber14/dat/leap/parm/gaff.dat
+Reading title:
+AMBER General Force Field for organic molecules (Version 1.7, Nov 2013)
+Loading Prep file: ./init_structure.prepc
+Loading parameters: ./FGrph_reord.frcmod
+Reading force field modification type file (frcmod)
+Reading title:
+remark goes here
+Building topology.
+Building atom parameters.
+Checking Unit.
+Building topology.
+Building atom parameters.
+Building bond parameters.
+Building angle parameters.
+Building proper torsion parameters.
+Building improper torsion parameters.
+old PREP-specified impropers:
+ total 0 improper torsions applied
+ 0 improper torsions in old prep form
+Building H-Bond parameters.
+Incorporating Non-Bonded adjustments.
+Not Marking per-residue atom chain types.
+Marking per-residue atom chain types.
+ (no restraints)
+Writing pdb file: FGrph_reord.pdb
+	Quit
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/prep to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/lib to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/parm to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/cmd to search path.
+-f: Source tleap.in.
+
+Welcome to LEaP!
+(no leaprc in search path)
+Sourcing: ./tleap.in
+----- Source: /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff
+----- Source of /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff done
+Log file: ./leap.log
+Loading parameters: /home/slamav/Software/AMBER/amber14/dat/leap/parm/gaff.dat
+Reading title:
+AMBER General Force Field for organic molecules (Version 1.7, Nov 2013)
+Loading Prep file: ./init_structure.prepc
+Loading parameters: ./FGrph_reord.frcmod
+Reading force field modification type file (frcmod)
+Reading title:
+remark goes here
+Building topology.
+Building atom parameters.
+Checking Unit.
+Building topology.
+Building atom parameters.
+Building bond parameters.
+Building angle parameters.
+Building proper torsion parameters.
+Building improper torsion parameters.
+old PREP-specified impropers:
+ total 0 improper torsions applied
+ 0 improper torsions in old prep form
+Building H-Bond parameters.
+Incorporating Non-Bonded adjustments.
+Not Marking per-residue atom chain types.
+Marking per-residue atom chain types.
+ (no restraints)
+Writing pdb file: FGrph_reord.pdb
+	Quit

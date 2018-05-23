@@ -1960,6 +1960,9 @@ def read_AMBER_Energy_Scan(filename="EnergyScan.dat"):
     return Eng,q
 
 def read_amber_mdout(filename):
+
+# TODO: Write documentation
+    
     fid    = open(filename,'r')   # Open the file
     flines = fid.readlines()      # Read the WHOLE file into RAM
     fid.close()
@@ -2332,6 +2335,7 @@ def read_TrEsp_charges(filename,verbose=True,dipole=False):
     Returns
     ----------
     coor,charge,at_type(,DipoleTrESP)
+    
     coor : numpy.array of real (dimension Nx3 where N is number of atoms)
         Atomic coordiantes in ATOMIC UNITS (Bohrs) 
     charge : numpy.array of real (dimension N)

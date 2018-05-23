@@ -7,7 +7,8 @@ Created on Thu Mar 10 13:54:57 2016
 
 import scipy.constants as const
 
-# frequency
+# frequency posite to energy: energy in internal / conversion_facs_energy["1/cm"] = energy in 1/cm
+# in fact conversion factors are for angular frequency (1 int => omega = 1 fs^{-1} )
 conversion_facs_frequency = {
     "int"    : 1.0,
     "1/fs"   : 1.0, 
@@ -15,9 +16,9 @@ conversion_facs_frequency = {
     "THz"    : 2.0*const.pi*1.0e-03,
     "Hz"     : 2.0*const.pi,
     "SI"     : 2.0*const.pi,
-    "nm"     : 1.0/(1.0e7*2.0*const.pi*const.c*1.0e-13),
-    "a.u."   : 27.21138602*1.0e-15*const.e/const.hbar,
-    "Ha"     : 27.21138602*1.0e-15*const.e/const.hbar      
+    "nm"     : 1.0/(1.0e7*2.0*const.pi*const.c*1.0e-13)#,
+#    "a.u."   : 27.21138602*1.0e-15*const.e/const.hbar,
+#    "Ha"     : 27.21138602*1.0e-15*const.e/const.hbar      
     } 
 
 # energy - Hartree to ... conversion_facs_energy["eV"]=27.211386019301617 
@@ -84,7 +85,12 @@ conversion_facs_length = {
 }
 
 
+conversion_facs_mass = {
+        "AU": 1.0,
+        "AMU": const.physical_constants["electron mass in u"][0]
+}
 
+kB_int_freq = const.k*1.0e-15/const.hbar # Boltzmann in internal frequency units [1/fs]
 
 #
 # Conversion function

@@ -412,7 +412,7 @@ def fill_basis_transf_matrix(typ,rotxy,rotxz,rotyz):
         
     return RotA,RotB,RotC
         
-def CenterMolecule(Coor,indx_center,indx_x,indx_y,print_angles=False,debug=False):
+def CenterMolecule(Coor,indx_center,indx_x,indx_y,print_angles=False,debug=False, **kwargs):
     '''Center molecular coordinates in following way. Center will be in origin
     of coordinate system (will have [0.0,0.0,0.0] coordinates) and vector X
     will be pointing into direction of x axes and vector Y will be in xy plane.
@@ -442,6 +442,10 @@ def CenterMolecule(Coor,indx_center,indx_x,indx_y,print_angles=False,debug=False
     print_angles : logical (optional parameter - init value=False)
         If `print_angles`=True also rotation angles and translation vestor
         will be written
+    **kwargs : dictionary (optional)
+        Provides a way how to set angles and center without specifying atomic 
+        indexes. kwargs={"center": vector with coordinates of center,"vec": 
+        matrix 2x3 with vector X and Y specified}
         
     Returns
     -------
@@ -456,50 +460,57 @@ def CenterMolecule(Coor,indx_center,indx_x,indx_y,print_angles=False,debug=False
         Molecule has to be firs moved to has its center in origin and then rotated.
     '''
     
-    if isinstance(indx_center,list):
-        listcenter=True
+    if "center" in kwargs and "vec" in kwargs:
+        # Define center and VecX and VecY
+        center = kwargs["center"]
+        VecX = kwargs["vec"][0]
+        VecY = kwargs["vec"][1]
+        NAtom=numpy.shape(Coor)[0]
     else:
-        listcenter=False
-    
-    if isinstance(indx_x,list):
-        if len(indx_x)==2 or len(indx_x)==4:
-            listx=True
+        if isinstance(indx_center,list):
+            listcenter=True
         else:
-            raise IOError('x axis cannot be defined by more than two indexes')
-    else:
-        listx=False
+            listcenter=False
         
-    if isinstance(indx_y,list):
-        if len(indx_y)==2 or len(indx_y)==4:
-            listy=True
+        if isinstance(indx_x,list):
+            if len(indx_x)==2 or len(indx_x)==4:
+                listx=True
+            else:
+                raise IOError('x axis cannot be defined by more than two indexes')
         else:
-            raise IOError('y axis cannot be defined by more than two indexes')
-    else:
-        listy=False
-    
-    # Vypocet polohy a uhlu hlavnich smeru
-    NAtom=numpy.shape(Coor)[0]
-    if listcenter:
-        center=numpy.zeros(3)
-        for ii in range(len(indx_center)):
-            center+=Coor[indx_center[ii],:]
-        center=center/len(indx_center)
-    else:
-        center=Coor[indx_center,:]
+            listx=False
+            
+        if isinstance(indx_y,list):
+            if len(indx_y)==2 or len(indx_y)==4:
+                listy=True
+            else:
+                raise IOError('y axis cannot be defined by more than two indexes')
+        else:
+            listy=False
         
-    if listx and (len(indx_x)==2):
-        VecX=Coor[indx_x[1],:]-Coor[indx_x[0],:]
-    elif listx and (len(indx_x)==4):
-        VecX=Coor[indx_x[1],:]-Coor[indx_x[0],:]+Coor[indx_x[3],:]-Coor[indx_x[2],:]
-    else:
-        VecX=Coor[indx_x,:]-center
-    
-    if listy and (len(indx_y)==2):
-        VecY=Coor[indx_y[1],:]-Coor[indx_y[0],:]
-    elif listy and (len(indx_y)==4):
-        VecY=Coor[indx_y[1],:]-Coor[indx_y[0],:]+Coor[indx_y[3],:]-Coor[indx_y[2],:]
-    else:
-        VecY=Coor[indx_y,:]-center
+        # Vypocet polohy a uhlu hlavnich smeru
+        NAtom=numpy.shape(Coor)[0]
+        if listcenter:
+            center=numpy.zeros(3)
+            for ii in range(len(indx_center)):
+                center+=Coor[indx_center[ii],:]
+            center=center/len(indx_center)
+        else:
+            center=Coor[indx_center,:]
+            
+        if listx and (len(indx_x)==2):
+            VecX=Coor[indx_x[1],:]-Coor[indx_x[0],:]
+        elif listx and (len(indx_x)==4):
+            VecX=Coor[indx_x[1],:]-Coor[indx_x[0],:]+Coor[indx_x[3],:]-Coor[indx_x[2],:]
+        else:
+            VecX=Coor[indx_x,:]-center
+        
+        if listy and (len(indx_y)==2):
+            VecY=Coor[indx_y[1],:]-Coor[indx_y[0],:]
+        elif listy and (len(indx_y)==4):
+            VecY=Coor[indx_y[1],:]-Coor[indx_y[0],:]+Coor[indx_y[3],:]-Coor[indx_y[2],:]
+        else:
+            VecY=Coor[indx_y,:]-center
     
     # Normalization of main axes
     norm=numpy.sqrt(numpy.dot(VecX,VecX))
@@ -1104,6 +1115,51 @@ def project_on_plane(coor,nvec,origin):
         ProjCoor[ii,:]=coor[ii,:]-dist*nvec
     
     return ProjCoor
+
+
+def fit_plane(coor):
+    ''' Find normal vector of plane and point in plane, which best fit the 
+    specified coordinates. 
+    
+    Parameters
+    ----------
+    coor : numpy.array of real (dimension Nx3 where N=1,2,3...)
+        Matrix of atomic coordinates
+        
+    Returns
+    -------
+     nvec : numpy.array or list of real (dimension 3)
+        normal vector of plane to which we would like to project
+    origin : numpy.array or list of real (dimension 3)
+        Point which define plane (point in plane)
+        
+    Notes
+    -------
+        Original coordinates remains unchanged.
+    '''
+    
+    # calculate variance in every dimension:
+    variance = numpy.var(coor,axis=0)
+    indx = numpy.argmin(variance) # in this dimension there will be highest normal vectorcontribution
+    
+    # setup matrix for parameters calculation
+    B = -coor[:,indx]
+    A = coor.copy()
+    A[:,indx] = 1.0
+    
+    # solve the equations for the plane
+    A_inv = numpy.dot( numpy.linalg.inv(numpy.dot(A.T,A)), A.T)
+    vec = numpy.dot(A_inv,B)
+    
+    # obtain normal vector and one point in the plane
+    d = vec[indx]
+    vec[indx] = 1.0
+    origin = numpy.zeros(3,dtype='f8')
+    origin[indx] = -d
+    norm = numpy.linalg.norm(vec)
+    nvec = vec/norm
+    
+    return nvec, origin
 
 def prepare_alkene(Dim,Position=numpy.array([0.0,0.0,0.0]),vec_x=numpy.array([1.0,0.0,0.0]),vec_y=numpy.array([0.0,1.0,0.0])):
     ''' Function to generate carbon position for model alkene

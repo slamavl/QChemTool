@@ -885,12 +885,13 @@ class Molecule:
             RotMat=self._get_cartesian_rot_mat(rotxy,rotxz,rotyz)
             self.vib_spec['Hessian']=np.dot(RotMat,np.dot(self.vib_spec['Hessian'],RotMat.T))
         if 'NMinCart' in self.vib_spec.keys():
-            RotMat=self._get_cartesian_rot_mat(rotxy,rotxz,rotyz)
-            self.vib_spec['NMinCart']=np.dot(RotMat,self.vib_spec['NMinCart'])
-        if 'CartInNM' in self.vib_spec.keys():
-            if self.vib_spec['CartInNM']!=None:
+            if self.vib_spec['NMinCart'] is not None:
                 RotMat=self._get_cartesian_rot_mat(rotxy,rotxz,rotyz)
-                self.vib_spec['CartInNM']=np.dot(self.vib_spec['CartInNM'],RotMat.T)                   
+                self.vib_spec['NMinCart']=np.dot(RotMat,self.vib_spec['NMinCart'])
+        if 'CartInNM' in self.vib_spec.keys():
+            if self.vib_spec['CartInNM'] is not None:
+                RotMat=self._get_cartesian_rot_mat(rotxy,rotxz,rotyz)
+                self.vib_spec['CartInNM']=np.dot(self.vib_spec['CartInNM'],RotMat.T)                  
     
     def rotate_1(self,rotxy,rotxz,rotyz):
         """" Inverse rotation of structure to **rotate** fuction.

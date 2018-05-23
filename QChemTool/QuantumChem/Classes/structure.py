@@ -13,13 +13,13 @@ import networkx as nx
 from os import path
 
 
-from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf
+from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf, read_AMBER_prepc
 from ..read_mine import read_TrEsp_charges as read_TrEsp
 from .general import Coordinate,Grid 
 from ...General.UnitsManager import position_units,PositionUnitsManaged,energy_units
 from ...General.types import UnitsManaged
 from ..positioningTools import RotateAndMove, RotateAndMove_1, CenterMolecule
-from ..output import OutputToXYZ, OutputTOmol2
+from ..output import OutputToXYZ, OutputTOmol2, OutputToPDB
 
 nist_file = path.join(path.dirname(path.realpath(__file__)),
                       'supporting_data/Atomic_Weights_NIST.html')
@@ -101,6 +101,8 @@ class Structure(PositionUnitsManaged):
         Delete atoms specified by indexes from the structure.
     guess_bonds :
         Add bonds between atoms which are close together
+    get_bonded_atoms :
+        
     count_fragments :
         Count how many separate structures are in the structure and outputs
         indexes of individual separate units.
@@ -110,6 +112,10 @@ class Structure(PositionUnitsManaged):
         Reads the molecule from pdb file into structure
     load_mol2 :
         Reads the molecule from mol2 file into structure
+    load_prepc :
+        Reads the molecule from AMBER prepc file into structure
+    load_gjf :
+        Reads the molecule from Gaussian input file into structure
     read_TrEsp_charges :
         Reads the molecule from TrEsp charges fiting procedure. If molecule is 
         allready allocated only charges are read
@@ -117,6 +123,8 @@ class Structure(PositionUnitsManaged):
         Output structure into mol2 file needed for AMBER MD simulation
     output_to_xyz :
         Output structure into xyz file
+    output_to_pdb :
+        Output structure into pdb file
     get_FF_types :
         Assign GAFF forcefield types to the atoms. So far only working for 
         fluorographene systes.
@@ -323,7 +331,7 @@ class Structure(PositionUnitsManaged):
             self.tr_quadrR2=None
 # TODO: Rotate grid
             
-    def center(self,indx_center,indx_x,indx_y,debug=False):
+    def center(self,indx_center,indx_x,indx_y,debug=False,**kwargs):
         """
         Centers the structure according to defined center and two main axis.
         Axis and center are defined by atomic indexes and after centering center
@@ -371,7 +379,7 @@ class Structure(PositionUnitsManaged):
             
         """
         
-        New_coor,Phi,Psi,Chi,center=CenterMolecule(self.coor.value,indx_center,indx_x,indx_y,print_angles=True,debug=debug)
+        New_coor,Phi,Psi,Chi,center=CenterMolecule(self.coor.value,indx_center,indx_x,indx_y,print_angles=True,debug=debug,**kwargs)
         self.move(-center[0],-center[1],-center[2])
         self.rotate(Phi,Psi,Chi)
         
@@ -403,23 +411,46 @@ class Structure(PositionUnitsManaged):
             is_AtType=True
         else:
             is_AtType=False
-        
 
         # Prepare
         if is_AtType:
-            indxH=np.argwhere(self.at_type=='H').T[0]
-            nH=len(indxH)
-        test=cKDTree(self.coor._value)
-        Bonds=test.query_pairs(bond_length,output_type='ndarray')
+            indxH = np.argwhere(self.at_type=='H').T[0]
+            nH = len(indxH)
+        test = cKDTree(self.coor._value)
+        Bonds = test.query_pairs(bond_length,output_type='ndarray')
         # Rapair bonds between two hydrogens
         if is_AtType:
             if nH>1:
+                list_to_delete = []
                 for ii in range(len(Bonds)):
-                    if self.at_type[Bonds[ii,0]]=='H':
-                        if self.at_type[Bonds[ii,1]]=='H':
-                            np.delete(Bonds,ii,axis=0)
-        self.bonds=Bonds
+                    if self.at_type[Bonds[ii,0]] == 'H':
+                        if self.at_type[Bonds[ii,1]] == 'H':
+                            list_to_delete.append(ii)
+        
+                for ii in reversed(list_to_delete):
+                    Bonds = np.delete(Bonds,ii,axis=0)
+        
+        self.bonds = Bonds
     
+    def get_bonded_atoms(self):
+        """ Finds connected atoms by chemical bond
+        
+        """
+        if self.bonds is None:
+            self.guess_bonds()
+        
+        connected = []
+        for ii in range(self.nat):
+            connected.append([])
+        
+        for ii in range(len(self.bonds)):
+            atom1 = self.bonds[ii][0]
+            atom2 = self.bonds[ii][1]
+            
+            connected[atom1].append(atom2)
+            connected[atom2].append(atom1)
+        return connected
+        
     def count_fragments(self,verbose=False):
         ''' Divide the structure into individual units between which there is
         no bond.
@@ -454,6 +485,7 @@ class Structure(PositionUnitsManaged):
             if verbose:
                 print('There is only single molecule in',self.name)
                 print(' ')
+            Molecules=[np.arange(self.nat)]
         else:
             for cc in nx.connected_component_subgraphs(g):
                 if verbose:
@@ -603,6 +635,64 @@ class Structure(PositionUnitsManaged):
         Aditional_info=AditionalInfo[5]
 
         return Name,Charge_method,Aditional_info
+    
+    
+    def load_prepc(self,filename,state='Ground'):
+        """ Loads all structure information from AMBER preps file. In present stage
+        it can be called only from not initialized structure.
+        
+        Parameters
+        -----------
+        filename : string
+            Name of the input file including the path if needed
+        state : string (optional init = 'Ground')
+            Which charges are present in prepc file. If ``state='Ground'`` it is
+            assumed that charges in prepc file correspond to ground state 
+            (default), therefore they are loaded in ``self.esp_grnd``. 
+            If ``state='Excited'`` it is assumed that charges in prepc file 
+            correspond to excited state, therefore they are loaded in
+            ``self.esp_exct``. If ``state='Transition'`` it is assumed that 
+            charges in prepc file are transition charges, therefore they are 
+            loaded in ``self.esp_trans``.
+        
+        Returns
+        ---------
+        indxlist of integers specifying position of every atom in original file
+        from which prepc file was generated. For every atom type INDX is from 1
+        to number of atoms of that type.
+
+        """
+        
+        Coor,Charge,AtType,FFType,MolName,indx_orig = read_AMBER_prepc(filename)
+        with position_units('Angstrom'): 
+            if not self.init:
+                self.nat=len(AtType)      
+                self.coor=Coordinate(Coor)                
+                self.ff_type=np.copy(FFType)
+                if state=='Ground':
+                    self.esp_grnd=np.array(Charge,dtype='f8')
+                elif state=='Excited':
+                    self.esp_exct=np.array(Charge,dtype='f8')
+                elif state=='Transition':
+                    self.esp_trans=np.array(Charge,dtype='f8')
+                at_type=[]
+                for jj in range(self.nat):
+                    at_type.append(''.join([i for i in AtType[jj] if not i.isdigit()]))
+                    at_type[jj]=at_type[jj].capitalize()
+                self.at_type=at_type.copy()
+                
+                self.ncharge=np.zeros(self.nat,dtype='i4')
+                for ii in range(self.nat):
+                    self.ncharge[ii]=get_atom_indx(self.at_type[ii])
+                self.mass=np.zeros(self.nat,dtype='f8')
+                for ii in range(self.nat):
+                    self.mass[ii]=get_mass(self.at_type[ii])
+                self.init=True
+                self.name = MolName
+            else:
+                raise Warning('Adding the information from mol2 file into existing structure is not yet supported')
+            
+        return indx_orig
     
     def load_gjf(self,filename):
         """ Loads all structure information from Gaussian gjf input file.
@@ -778,6 +868,20 @@ class Structure(PositionUnitsManaged):
         
         with position_units('Angstrom'):
             OutputToXYZ(self.coor.value,self.at_type,filename)
+    
+    def output_to_pdb(self,filename='Molecule.pdb'):
+        """ Create pdb file for the structure with unique atom names.
+        
+        Parameters
+        -----------
+        filename : string (optional init = 'Molecule.xyz')
+            Name of the output file including the path if needed (including the 
+            .xyz suffix)
+        """
+        
+        with position_units('Angstrom'):
+            OutputToPDB(self.coor.value,self.at_type,filename=filename)
+        
     
     def get_FF_types(self):
         ''' 

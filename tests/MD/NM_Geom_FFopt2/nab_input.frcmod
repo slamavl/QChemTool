@@ -1,0 +1,64 @@
+remark goes here
+MASS
+cb 12.01         0.878               Same as c3
+fb 19.00         0.320               Same as f
+
+BOND
+cb-cb    302.8507    1.574020     Same as c3-c3 (for initial guess)
+cb-fb    363.2472    1.344000     Same as c3-f (for initial guess)
+cb-c3    302.2259   1.530080     Same as c3-c3 (for initial guess)
+c3-c3    302.4413    1.460660     Same as c3-c3 (for initial guess)
+c3-f     363.2472   1.454040     Same as c3-f (for initial guess)
+
+ANGLE
+cb-cb-cb    62.34498     110.6300  Same as c3-c3-c3 (for initial guess)
+cb-cb-fb    66.22425     109.4100  Same as c3-c3-f (for initial guess)
+cb-cb-c3    62.34498      88.0170  Same as c3-c3-c3 (for initial guess)
+cb-c3-c3    62.34498     110.6300  Same as c3-c3-c3 (for initial guess)
+cb-c3-cb    62.34498     110.6300  Same as c3-c3-c3 (for initial guess)
+c3-cb-c3    62.34498      95.5250  Same as c3-c3-c3 (for initial guess)
+cb-c3-f     66.22000     109.4100  Same as c3-c3-f (for initial guess)
+c3-cb-fb    66.22425     109.4100  Same as c3-c3-f (for initial guess)
+fb-cb-fb    71.26000     120.0000  Same as f -c3-f (for initial guess)
+c3-c3-c3    62.34498     107.1530  from gaff_fgrph.dat
+c3-c3-f     66.22425     109.4100  from gaff_fgrph.dat
+f -c3-f     71.26000     210.0000  from gaff_fgrph.dat
+
+DIHE
+cb-cb-cb-cb   1    0.18          0.000          -3.         Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-cb-cb   1    0.25        180.000          -2.         Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-cb-cb   1    0.20        180.000           1.         Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-c3-cb   1    0.18          0.0            -3.         Same as c3-c3-c3-c3 (for initial guess) - Section added by me START 
+cb-cb-c3-cb   1    0.25        180.0            -2.         Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-c3-cb   1    0.20        180.0             1.         Same as c3-c3-c3-c3 (for initial guess)
+cb-c3-cb-cb   1    0.18          0.0            -3.         Same as c3-c3-c3-c3 (for initial guess)
+cb-c3-cb-cb   1    0.25        180.0            -2.         Same as c3-c3-c3-c3 (for initial guess)
+cb-c3-cb-cb   1    0.20        180.0             1.         Same as c3-c3-c3-c3 (for initial guess)
+cb-c3-c3-cb   1    0.18          0.0            -3.         Same as c3-c3-c3-c3 (for initial guess)
+cb-c3-c3-cb   1    0.25        180.0            -2.         Same as c3-c3-c3-c3 (for initial guess)
+cb-c3-c3-cb   1    0.20        180.0             1.         Same as c3-c3-c3-c3 (for initial guess) - Section added by me END 
+cb-cb-cb-fb   9    1.400         0.000           3.000      Same as X -c3-c3-X (for initial guess)
+cb-cb-cb-c3   1    0.18          0.0            -3.         Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-cb-c3   1    0.25        180.0            -2.         Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-cb-c3   1    0.20        180.0             1.         Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-c3-c3   1    1.20         60.0             3.000      Same as c3-c3-c3-c3 (for initial guess)
+cb-cb-c3-f    9    1.400         0.000           3.000      Same as X -c3-c3-X (for initial guess)
+c3-cb-cb-fb   9    1.400         0.000           3.000      Same as X -c3-c3-X (for initial guess)
+c3-c3-cb-fb   9    1.400         0.000           3.000      Same as X -c3-c3-X (for initial guess)
+fb-cb-cb-fb   1    0.00          0.0            -3.         Same as f -c3-c3-f (for initial guess)
+fb-cb-cb-fb   1    1.20        180.000           3.000      Same as f -c3-c3-f (for initial guess)
+fb-cb-c3-f    1    0.00          0.0            -3.         Same as f -c3-c3-f (for initial guess)
+fb-cb-c3-f    1    1.20        180.000           3.000      Same as f -c3-c3-f (for initial guess)
+cb-c3-cb-fb   1    1.20         60.000           3.000      (for initial guess)
+c3-cb-c3-f    1    1.20         60.000           3.000      (for initial guess)
+cb-c3-cb-c3   1    0.20          0.000           3.000      (for initial guess)
+c3-cb-cb-c3   1    0.20          0.000           3.000      (for initial guess)
+c3-cb-c3-c3   1    0.20          0.000           3.000      (for initial guess)
+
+IMPROPER
+
+NONBON
+cb          1.9080  0.1094             Same as c3 (for initial guess)
+fb          1.75    0.061              Same as f  (for initial guess)
+
+

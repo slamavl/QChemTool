@@ -7,18 +7,20 @@ Created on Tue Jan 31 14:33:56 2017
 import numpy as np
 from copy import deepcopy
 from scipy.spatial.distance import pdist,squareform
+import os
 
 from ..QuantumChem.Classes.structure import Structure
 from ..QuantumChem.calc import identify_molecule
 from ..QuantumChem.read_mine import read_TrEsp_charges
 from ..QuantumChem.interaction import charge_charge
-from ..QuantumChem.positioningTools import project_on_plane, CenterMolecule
-from ..General.units import conversion_facs_energy
+from ..QuantumChem.positioningTools import project_on_plane, CenterMolecule, fit_plane
+from ..General.units import conversion_facs_energy, conversion_facs_mass
 from .Electrostatics_module import PrepareMolecule_1Def as ElStat_PrepareMolecule_1Def
 from .Electrostatics_module import PrepareMolecule_2Def as ElStat_PrepareMolecule_2Def
 from ..General.Potential import potential_charge, potential_dipole
 from ..QuantumChem.Classes.general import Energy as EnergyClass
 from ..General.UnitsManager import energy_units
+from ..QuantumChem.calc import GuessBonds
 
 from ..QuantumChem.output import OutputMathematica
 
@@ -300,8 +302,10 @@ class Dielectric:
         
     def _dR_BpA(self,index1,index2,charge1,charge2,typ,eps=1):
         ''' function which calculate derivation of interaction energy between defect
-        A and defect B defined by index:
-        d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)).E^{(A)}(Rn)]
+        A and defect B defined by index: \n
+        d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)).E^{(A)}(Rn)] \n
+        which is -interaction energy ( for derivation of energy, Hamiltonian,
+        we need to take negative value of the result)
         
         Parameters
         ----------
@@ -322,20 +326,20 @@ class Dielectric:
 
         Notes
         ----------
-        **After exiting the function transition charges are placed on both defects
-        and not only on the first**
+        **After exiting the function transition charges are the same as in the
+        begining**
         
         For calculation of derivation of ApA use ``_dR_BpA(index1,index1,
         charge1,charge1,typ,eps=1)`` where charges in molecule Dielectric class
         have to be nonzero for defect with ``index1`` **and zero for the other
-        defect if present**. If not first swap the the defects with 
-        ``_swap_atoms(index1,index2)`` and than use as described earlier. 
-        The same is true for the second defect, where you only replace index1 
-        for index2.
+        defect if present**.
         '''
 
 # TODO: Add posibility to read charges from self.charges: charge1 = self.charges[index1] and charge2 = self.charges[index2]
 # TODO: Read polarizabilities on the defects and when potting charges to zero put also zero polarizabilities       
+        
+        charge1_orig = self.charge[index1] 
+        charge2_orig = self.charge[index2] 
         
         res=np.zeros((self.Nat,3),dtype='f8')
         
@@ -364,15 +368,17 @@ class Dielectric:
         
         # Place transition charges only on the first defect (defect A)
         if index1==index2:
-            if (charge1==charge2).all():
-                self.charge[index1] = charge1
-            else:
-                raise Warning("For calculation of d_ApA same charges have to be inputed.")
+            self.charge[index1] = charge1
+            # The folowing is only for polarization with transition density and not polarization by ground state charges and interaction with excited ones
+#            if (charge1==charge2).all():
+#                self.charge[index1] = charge1
+#            else:
+#                raise Warning("For calculation of d_ApA same charges have to be inputed.")
         else:
             self.charge[index1] = charge1
             self.charge[index2] = 0.0
         
-        # calculating derivation according to atom displacement from defect B
+        # calculating derivation according to defect B atom displacement
         Q=np.meshgrid(self.charge,self.charge)[0]   # in columns same charges
         ELF=np.zeros((self.Nat,self.Nat,3),dtype='f8')
         
@@ -406,10 +412,12 @@ class Dielectric:
         
         # Place transition charges only on the second defect (defect B)
         if index1==index2:
-            if (charge1==charge2).all():
-                self.charge[index2] = charge2
-            else:
-                raise Warning("For calculation of d_ApA same charges have to be inputed.")
+            self.charge[index2] = charge2
+            # viz previous case
+#            if (charge1==charge2).all():
+#                self.charge[index2] = charge2
+#            else:
+#                raise Warning("For calculation of d_ApA same charges have to be inputed.")
         else:
             self.charge[index1] = 0.0
             self.charge[index2] = charge2
@@ -448,15 +456,17 @@ class Dielectric:
 #        self._swap_atoms(index1,index2)
         
         # Place transition charges back on both defects
-        self.charge[index1] = charge1
-        self.charge[index2] = charge2
-        
+        self.charge[index1] = charge1_orig
+        self.charge[index2] = charge2_orig
+
         return res.reshape(3*self.Nat)
     
     def _dR_BppA(self,index1,index2,charge1,charge2,typ,eps=1):
         ''' function which calculate derivation of second order interaction energy
-        between defect A and defect B defined by index1 resp. index2:
-        d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)). Sum_{n'} T(Rn-Rn').(1/2*Polarizability(n')).E^{(A)}(Rn)]
+        between defect A and defect B defined by index1 resp. index2: \n
+        ``d/dR[Sum_{n} E^{(B)}(Rn).(1/2*Polarizability(n)). Sum_{n'} T(Rn-Rn').(1/2*Polarizability(n')).E^{(A)}(Rn)]`` \n
+        which is -interaction energy ( for derivation of energy, Hamiltonian,
+        we need to take negative value of the result)
         
         Parameters
         ----------
@@ -639,8 +649,170 @@ class Dielectric:
         self.charge[index2] = charge2
         
         return res.reshape(3*self.Nat)
-        
     
+    def _dR_ApEnv(self,index1,charge1,env_coor,env_charge,typ,eps=1):
+        ''' function which calculate derivation of 'interaction energy' between defect
+        A defined by index and environment atoms: \n
+        d/dR[Sum_{n} E^{(A)}(Rn).(1/2*Polarizability(n)).E^{(env)}(Rn)] \n
+        which is -interaction energy ( for derivation of energy, Hamiltonian,
+        we need to take negative value of the result)
+        
+        Parameters
+        ----------
+        index1 : list or numpy.array of integer (dimension N_def1_atoms)
+            Atomic indexes of atoms which coresponds to first defect
+        charge1 : numpy array of real (dimension N_def1_atoms)
+            Vector of charges (transition, excited, ground, ...) for every atom of 
+            defect A (listed in ``index1``)
+        env_coor : numpy.array of real (dimension Nat x 3)
+            Coordninates for every environment atom.
+        env_charge : numpy array or list of real (dimension Nat)
+            Atomic ESP charges for every atom in the environment
+        typ : str ('AlphaE','Alpha_E','BetaEE')
+            Specifies which polarizability is used for calculation of induced
+            atomic dipoles
+        eps : real (optional - init=1.0)
+            Relative dielectric polarizability of medium where the dipoles and 
+            molecule is present ( by default vacuum with relative permitivity 1.0)
+            
+        Return
+        ----------
+        res
+        res_env
+        
+
+        Notes
+        ----------
+        **After exiting the function transition charges are the same as in the
+        begining**
+        '''
+
+# TODO: Add posibility to read charges from self.charges: charge1 = self.charges[index1] and charge2 = self.charges[index2]
+# TODO: Read polarizabilities on the defects and when potting charges to zero put also zero polarizabilities       
+        
+        charge1_orig = self.charge[index1]
+        charge_env_orig = env_charge[index1]
+        
+        env_Nat = env_coor.shape[0]
+        res=np.zeros((self.Nat,3),dtype='f8')
+        res_env=np.zeros((env_Nat,3),dtype='f8')
+        MASK = np.zeros(self.Nat,dtype="bool")
+        MASK[index1] = True
+        
+        # Place charges on the defect (defect A)
+        self.charge[index1] = charge1
+        # zero charges for defect in the environment 
+        env_charge[index1] = 0.0
+        
+        # calculation of tensors with interatomic distances for polarizability class
+        R=np.zeros((self.Nat,self.Nat,3),dtype='f8') # mutual distance vectors
+        P=np.zeros((self.Nat,3),dtype='f8')
+        for ii in range(self.Nat):
+            for jj in range(ii+1,self.Nat):
+                R[ii,jj,:]=self.coor[ii]-self.coor[jj]
+                R[jj,ii,:]=-R[ii,jj,:]
+        RR=np.sqrt(np.power(R[:,:,0],2)+np.power(R[:,:,1],2)+np.power(R[:,:,2],2))  # mutual distances
+        unit=np.diag([1]*self.Nat)
+        RR=RR+unit   # only for avoiding ddivision by 0 for diagonal elements     
+        RR3=np.power(RR,3)
+        RR5=np.power(RR,5)
+        
+        # calculate tensor with interactomic distances between environmnet and polarizability class atoms
+        #R_env2pol=np.zeros((self.Nat,env_Nat,3),dtype='f8') # mutual distance vectors
+        R_pol = np.tile(self.coor,(env_Nat,1,1))
+        R_pol = np.swapaxes(R_pol,0,1)
+        R_env = np.tile(env_coor,(self.Nat,1,1))
+        R_env2pol = R_pol - R_env
+        RR_env2pol = np.linalg.norm(R_env2pol,axis=2)
+        RR3_env2pol = np.power(RR_env2pol,3)
+        RR5_env2pol = np.power(RR_env2pol,5)
+        
+        # definition of T tensor
+        T=np.zeros((self.Nat,self.Nat,3,3),dtype='f8') # mutual distance vectors
+        for ii in range(3):
+            T[:,:,ii,ii]=1/RR3[:,:]-3*np.power(R[:,:,ii],2)/RR5
+            for jj in range(ii+1,3):
+                T[:,:,ii,jj] = -3*R[:,:,ii]*R[:,:,jj]/RR5
+                T[:,:,jj,ii] = T[:,:,ii,jj]
+        for ii in range(self.Nat):
+            T[ii,ii,:,:]=0.0        # no self interaction of atom i with atom i
+            
+        # definition of T tensor between environment and the polarizability class
+        T_pol2env=np.zeros((env_Nat,self.Nat,3,3),dtype='f8') # mutual distance vectors
+        for ii in range(3):
+            T_pol2env[:,:,ii,ii]=1/(RR3_env2pol.T + np.identity(self.Nat))[:,:]-3*np.power(R_env2pol[:,:,ii],2).T/(RR5_env2pol.T+np.identity(self.Nat))
+            for jj in range(ii+1,3):
+                T_pol2env[:,:,ii,jj] = -3*R_env2pol[:,:,ii].T*R_env2pol[:,:,jj].T/(RR5_env2pol.T + np.identity(self.Nat))
+                T_pol2env[:,:,jj,ii] = T_pol2env[:,:,ii,jj]
+        for ii in range(self.Nat):
+            T_pol2env[ii,ii,:,:]=0.0        # no self interaction of atom i with atom i
+        
+        # calculating derivation according to environment atom displacement
+        Q=np.meshgrid(self.charge,self.charge)[0]   # in columns same charges
+        ELF=np.zeros((self.Nat,self.Nat,3),dtype='f8')
+        
+        # calculate electric field generated by the first defect (defect A)
+        for jj in range(3):
+            ELF[:,:,jj]=(Q/RR3)*R[:,:,jj]   # ELF[i,j,:]  is electric field at position i generated by atom j 
+        for ii in range(self.Nat):
+            ELF[ii,ii,:]=np.zeros(3,dtype='f8')
+        
+        # calculate induced dipoles induced by the first defect (defect A)
+        ELFV=np.array(np.sum(ELF,axis=1),dtype='f8')             # ELFV[i,:]   is electric field at position of atom i
+        for ii in range(self.Nat):
+            P[ii,:]=np.dot(self.polar[typ][ii],ELFV[ii,:])
+        
+        for ii in range(3):
+            for n in range(self.nat):
+                if not MASK[n]:
+                    res[n,ii] += np.dot(np.dot(env_charge,T_pol2env[:,n,ii,:]),P[n,:])
+        
+        ELFV=np.zeros((env_Nat,3),dtype='f8')
+        for ii in range(3):
+            for jj in range(3):
+                ELFV[:,ii]+=np.dot(T_pol2env[:,:,ii,jj],P[:,jj])
+        
+        for ii in range(3):
+            res_env[:,ii] -= env_charge * ELFV[:,ii]
+        
+        # calculate induced dipoles induced by the environment ESP atomic charges
+        Q=np.meshgrid(env_charge,self.charge)[0]   # in columns same charges - in rows environment charges
+        ELF=np.zeros((self.Nat,env_Nat,3),dtype='f8')
+        for jj in range(3):
+            ELF[:,:,jj]=( Q/(RR3_env2pol+np.identity(self.Nat)) )*R_env2pol[:,:,jj]   # ELF[i,j,:]  is electric field at position i generated by atom j 
+        for ii in range(self.Nat):
+            ELF[ii,ii,:]=np.zeros(3,dtype='f8')
+        
+        ELFV=np.array(np.sum(ELF,axis=1),dtype='f8')             # ELFV[i,:]   is electric field at position of atom i
+        for ii in range(self.Nat):
+            P[ii,:]=np.dot(self.polar[typ][ii],ELFV[ii,:])  # induced dipoles by environment charge distribution
+        
+        P[index1,:]=0.0 # just for sure
+        
+        for n in range(self.Nat):
+            if not MASK[n]:
+                for jj in range(len(index1)):
+                    res[n,:]+=charge1[jj]*np.dot(T[index1[jj],n,:,:],P[n,:])
+        
+        
+        # calculating derivation according to atom displacement from defect A
+        ELFV=np.zeros((self.Nat,3),dtype='f8')
+        for ii in range(3):
+            for jj in range(3):
+                ELFV[:,ii]+=np.dot(T[:,:,ii,jj],P[:,jj])
+        for ii in range(len(index1)):
+            res[index1[ii],:] -= charge1[ii]*ELFV[index1[ii],:]
+        
+        
+        
+        # Place original charges back defects and the environment atoms
+        self.charge[index1] = charge1_orig
+        env_charge[index1] = charge_env_orig
+        
+        return res.reshape(3*self.Nat),res_env.reshape(3*self.Nat)
+        
+
+# TODO: Add possibility for NN = -err to calculate dipoles until convergence is reached
     def _calc_dipoles_All(self,typ,Estatic=np.zeros(3,dtype='f8'),NN=60,eps=1,debug=False):
         ''' Function for calculation induced dipoles of SCF procedure for interaction
         of molecule with environment. It calculates induced dipoles on individual
@@ -909,6 +1081,96 @@ class Dielectric:
             Total induced dipole moment in the environment by the first defect.
         dipolesB : numpy array of float (dimension 3)
             Total induced dipole moment in the environment by the second defect.
+        dipoles_polA : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect
+        
+        """
+        
+        if typ=='BetaEE' and order>1:
+            raise IOError('For calculation with beta polarization maximal order is 1')
+        elif typ=='BetaEE' and order<1:
+            return np.zeros((2,2),dtype='f8')
+        
+        defA_charge=self.charge[index1]
+        defB_charge=self.charge[index2]
+        defA_indx=deepcopy(index1)
+        defB_indx=deepcopy(index2)
+        
+        PolMAT=np.zeros((2,2),dtype='f8')
+        E_TrEsp=self.get_TrEsp_Eng(index1, index2)
+        
+        if debug:
+            print(typ,order)
+        
+        # Polarization by molecule B
+        self.charge[defA_indx]=0.0
+        self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
+        dipolesB=np.sum(self.dipole,axis=0)   # induced dipoles by second defect (defect B) 
+        self.charge[defA_indx]=defA_charge
+        PolMAT[1,1] = self._get_interaction_energy(defB_indx,charge=defB_charge,debug=False) - E_TrEsp
+        PolMAT[0,1] = self._get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
+        PolMAT[1,0] = PolMAT[0,1]
+        dipoles_polB = self.dipole.copy()
+        self.dipole=np.zeros((self.Nat,3),dtype='f8')
+        
+        # Polarization by molecule A
+        self.charge[defB_indx]=0.0
+        self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
+        dipolesA=np.sum(self.dipole,axis=0)
+        self.charge[defB_indx]=defB_charge
+        PolMAT[0,0] = self._get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
+        if debug:
+            print(PolMAT*conversion_facs_energy["1/cm"])
+            if np.isclose(self._get_interaction_energy(defB_indx,charge=defB_charge,debug=False)-E_TrEsp,PolMAT[1,0]):
+                print('ApB = BpA')
+            else:
+                raise Warning('ApB != BpA')
+        dipoles_polA = self.dipole.copy()
+        self.dipole=np.zeros((self.Nat,3),dtype='f8')
+        
+        if typ=='AlphaE' or typ=='BetaEE' or typ=='Alpha_st':
+            return PolMAT,dipolesA,dipolesB,dipoles_polA,dipoles_polB
+        elif typ=='Alpha_E':
+            PolMAT[[0,1],[0,1]] = PolMAT[[1,0],[1,0]]   # Swap AlphaMAT[0,0] with AlphaMAT[1,1]
+            return PolMAT,dipolesA,dipolesB,dipoles_polA,dipoles_polB
+    
+    
+    def _TEST_fill_Polar_matrix(self,index1,index2,typ='AlphaE',order=80,debug=False, out_pot=False):
+        """ Calculate polarization matrix representation for interaction energy
+        calculation.
+        
+        Parameters
+        ---------
+        index1 : list of integer (dimension Natoms_defect1)
+            Indexes of all atoms from the first defect (starting from 0)
+        index2 : list of integer (dimension Natoms_defect2)
+            Indexes of all atoms from the second defect (starting from 0)
+        typ : string (optional init = 'AlphaE')
+            Which polarizability should be used for calculation of induced 
+            dipoles. Supported types are: ``'AlphaE'``, ``'Alpha_E'`` and
+            ``'BetaEE'``
+        order : integer (optional - init=80)
+            Specify how many SCF steps shoudl be used in calculation  of induced
+            dipoles - according to the used model it should be 2
+        
+        Returns
+        -------
+        PolMAT : numpy array of float (dimension 2x2)
+            Polarizability matrix representation. For ``typ='AlphaE'`` or 
+            ``typ='BetaEE': PolMAT[0,0] = -E(1)*induced_dipole(1),
+            PolMAT[0,1] = PolMAT[1,0] = -E(1)*induced_dipole(2) and
+            PolMAT[1,1] = -E(2)*induced_dipole(2). For ``typ='Alpha_E'`` 
+            diagonal elements are swapped: PolMAT[0,0] = -E(2)*induced_dipole(2),
+            PolMAT[0,1] = PolMAT[1,0] = -E(1)*induced_dipole(2) and
+            PolMAT[1,1] = -E(1)*induced_dipole(1)
+        dipolesA : numpy array of float (dimension 3)
+            Total induced dipole moment in the environment by the first defect.
+        dipolesB : numpy array of float (dimension 3)
+            Total induced dipole moment in the environment by the second defect.
+        dipoles_polA : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect
         
         """
         
@@ -950,13 +1212,14 @@ class Dielectric:
                 print('ApB = BpA')
             else:
                 raise Warning('ApB != BpA')
+        dipoles_polA = self.dipole.copy()
         self.dipole=np.zeros((self.Nat,3),dtype='f8')
         
-        if typ=='AlphaE' or typ=='BetaEE':
-            return PolMAT,dipolesA,dipolesB
+        if typ=='AlphaE' or typ=='BetaEE' or typ=='Alpha_st':
+            return PolMAT,dipolesA,dipolesB,dipoles_polA
         elif typ=='Alpha_E':
             PolMAT[[0,1],[0,1]] = PolMAT[[1,0],[1,0]]   # Swap AlphaMAT[0,0] with AlphaMAT[1,1]
-            return PolMAT,dipolesA,dipolesB
+            return PolMAT,dipolesA,dipolesB,dipoles_polA
     
     def get_TrEsp_Eng(self, index1, index2):
         """ Calculate TrEsp interaction energy for defects (defect-like 
@@ -1097,11 +1360,532 @@ class Dielectric:
             
             # Change to energy class
             with energy_units('AU'):
-                Eshift=EnergyClass(Eshift)
+                Eshift = EnergyClass(Eshift)
+            
             return Eshift, TrDip
         else:
             raise IOError('Unsupported approximation')
+    
+    def _TEST_Compare_SingleDefectProperties(self, tr_charge, gr_charge, ex_charge, struc, index, dAVA=0.0, order=80, approx=1.1):
+        ''' Calculate effects of environment such as transition energy shift
+        and transition dipole change for single defect.
         
+        Parameters
+        ----------
+        index : list of integer (dimension Natoms_defect)
+            Indexes of all atoms from the defect (starting from 0) for which
+            transition energy and transition dipole is calculated
+        dAVA : float
+            **dAVA = <A|V|A> - <G|V|G>** Difference in electrostatic 
+            interaction energy between defect and environment for defect in 
+            excited state <A|V|A> and in ground state <G|V|G>.
+        order : integer (optional - init = 80)
+            Specify how many SCF steps shoudl be used in calculation  of induced
+            dipoles - according to the used model it should be 2
+        approx : real (optional - init=1.1)
+            Specifies which approximation should be used.
+            
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+
+        Returns
+        -------
+        Eshift : Energy class
+            Transition energy shift for the defect due to the fluorographene
+            environment calculated from structure with single defect. Units are
+            energy managed
+        TrDip : numpy array of real (dimension 3)
+            Total transition dipole for the defect with environment effects 
+            included calculated from structure with single defect (in ATOMIC 
+            UNITS)
+        
+        **Neglecting `tilde{Beta(E)}` is not valid approximation. It shoudl be
+        better to neglect Beta(E,-E) to be consistent with approximation for 
+        interaction energy**
+        
+        Notes
+        ----------
+        dip = Alpha(E)*El_field_TrCharge + Alpha(-E)*El_field_TrCharge 
+        Then final transition dipole of molecule with environment is calculated
+        according to the approximation:
+        
+        **Approximation 1.1:**
+            dip_fin = dip - (Vinter-DE)*Beta(E,E)*El_field_TrCharge + dip_init(1-1/4*Ind_dip_Beta(E,E)*El_field_TrCharge)
+        **Approximation 1.2:**
+            dip_fin = dip - (Vinter-DE)*Beta(E,E)*El_field_TrCharge + dip_init     
+        **Approximation 1.3:**
+            dip_fin = dip - 2*Vinter*Beta(E,E)*El_field_TrCharge + dip_init
+        
+        '''
+
+        # Get TrEsp Transition dipole
+        TrDip_TrEsp = np.dot(self.charge[index],self.coor[index,:]) # vacuum transition dipole for single defect
+        
+        # Get energy contribution from polarization by transition density
+        self.charge[index] = tr_charge
+        charge = self.charge[index]
+        
+        # Set distance matrix
+        R_elst = np.tile(struc.coor._value,(self.Nat,1,1))
+        R_pol = np.tile(self.coor,(struc.nat,1,1))
+        R = (R_elst - np.swapaxes(R_pol,0,1))            # R[ii,jj,:]=self.coor[jj]-self.coor[ii]
+        
+        # Calculate polarization matrixes
+        # TODO: Shift this block to separate function
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        Polar1_AlphaE = self._get_interaction_energy(index,charge=charge,debug=False)
+        pot1_dipole_AlphaE_tr = potential_dipole(self.dipole,R)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=2,eps=1,debug=False)
+        Polar2_AlphaE = self._get_interaction_energy(index,charge=charge,debug=False)
+        Polar2_AlphaE = Polar2_AlphaE - Polar1_AlphaE
+        dip_AlphaE = np.sum(self.dipole,axis=0)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        self._calc_dipoles_All('Alpha_E',NN=1,eps=1,debug=False)
+        Polar1_Alpha_E = self._get_interaction_energy(index,charge=charge,debug=False)
+        pot1_dipole_Alpha_E_tr = potential_dipole(self.dipole,R)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_E',NN=2,eps=1,debug=False)
+        dip_Alpha_E = np.sum(self.dipole,axis=0)
+        dip_Alpha_E = np.sum(self.dipole,axis=0)
+        Polar2_Alpha_E = self._get_interaction_energy(index,charge=charge,debug=False)
+        Polar2_Alpha_E = Polar2_Alpha_E - Polar1_Alpha_E
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        dip_Beta = np.sum(self.dipole,axis=0)
+        Polar1_Beta_EE = self._get_interaction_energy(index,charge=charge,debug=False)
+        pot1_dipole_betaEE_tr = potential_dipole(self.dipole,R)
+        
+        self.charge[index] = ex_charge
+        charge = self.charge[index]
+        Polar1_Beta_EE_tr_ex = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.charge[index] = gr_charge
+        charge = self.charge[index]
+        Polar1_Beta_EE_tr_gr = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        # Calculate polarization by ground state charge distribution
+        self.charge[index] = gr_charge
+        charge = self.charge[index]
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        Polar1_static_gr = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=2,eps=1,debug=False)
+        Polar2_static_gr = self._get_interaction_energy(index,charge=charge,debug=False)
+        Polar2_static_gr = Polar2_static_gr - Polar1_static_gr
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        Polar1_Beta_EE_gr = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        # Calculate polarization by excited state charge distribution
+        self.charge[index] = ex_charge
+        charge = self.charge[index]
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        Polar1_static_ex = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=2,eps=1,debug=False)
+        Polar2_static_ex = self._get_interaction_energy(index,charge=charge,debug=False)
+        Polar2_static_ex = Polar2_static_ex - Polar1_static_ex
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        Polar1_Beta_EE_ex = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        # Calculate indiced dipole by charge difference between ground and excited state
+        self.charge[index] = ex_charge - gr_charge 
+        charge = self.charge[index]
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        pot1_dipole_ex_gr = potential_dipole(self.dipole,R)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=2,eps=1,debug=False)
+        pot2_dipole_ex_gr = potential_dipole(self.dipole,R)
+        pot2_dipole_ex_gr = pot2_dipole_ex_gr - pot1_dipole_ex_gr
+        
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        pot1_dipole_betaEE_ex_gr = potential_dipole(self.dipole,R)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        # calculate interaction between induced dipoles by transition density with ground and excited charges of the chromophore
+        self.charge[index] = tr_charge
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        pot1_dipole_static_tr = potential_dipole(self.dipole,R)
+        self.charge[index] = ex_charge
+        charge = self.charge[index]
+        Polar1_static_tr_ex = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.charge[index] = gr_charge
+        charge = self.charge[index]
+        Polar1_static_tr_gr = self._get_interaction_energy(index,charge=charge,debug=False)
+        
+        self.charge[index] = tr_charge
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        self.charge[index] = gr_charge
+        charge = self.charge[index]
+        Polar1_AlphaE_tr_gr = self._get_interaction_energy(index,charge=charge,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = tr_charge
+        self._calc_dipoles_All('Alpha_E',NN=1,eps=1,debug=False)
+        self.charge[index] = ex_charge
+        charge = self.charge[index]
+        Polar1_Alpha_E_tr_ex = self._get_interaction_energy(index,charge=charge,debug=False)
+        
+        
+        # Set the variables to initial state
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = tr_charge
+        
+        if approx==1.1:
+            # Calculate transition energy shift
+            Eshift = dAVA + Polar1_AlphaE + Polar2_AlphaE - Polar1_Alpha_E - Polar2_Alpha_E
+            Eshift -= (self.VinterFG - dAVA)*Polar1_Beta_EE
+            
+            # Calculate transition dipoles for every defect
+            TrDip = TrDip_TrEsp*(1 + Polar1_Beta_EE/4) + dip_AlphaE + dip_Alpha_E
+            TrDip -= (self.VinterFG - dAVA)*dip_Beta
+            
+            # Change to energy class
+            with energy_units('AU'):
+                Eshift = EnergyClass(Eshift)
+                dAVA = EnergyClass(dAVA)
+                Polar1_AlphaE = EnergyClass(Polar1_AlphaE)
+                Polar2_AlphaE = EnergyClass(Polar2_AlphaE)
+                Polar1_Alpha_E = EnergyClass(Polar1_Alpha_E)
+                Polar2_Alpha_E = EnergyClass(Polar2_Alpha_E)
+                Polar1_Beta_EE = EnergyClass(Polar1_Beta_EE)
+                Polar1_static_ex_gr = EnergyClass(Polar1_static_ex - Polar1_static_gr)
+                Polar2_static_ex_gr = EnergyClass(Polar2_static_ex - Polar2_static_gr)
+                Polar1_Beta_EE_ex_gr = EnergyClass(Polar1_Beta_EE_ex - Polar1_Beta_EE_gr)
+                Polar1_static_tr_ex = EnergyClass(Polar1_static_tr_ex)
+                Polar1_static_tr_gr = EnergyClass(Polar1_static_tr_gr)
+                Polar1_AlphaE_tr_gr = EnergyClass(Polar1_AlphaE_tr_gr)
+                Polar1_Alpha_E_tr_ex = EnergyClass(Polar1_Alpha_E_tr_ex)
+                Polar1_Beta_EE_tr_ex = EnergyClass(Polar1_Beta_EE_tr_ex)
+                Polar1_Beta_EE_tr_gr = EnergyClass(Polar1_Beta_EE_tr_gr)
+            
+            res_Energy = {'dE_0-1': Eshift, 'dE_elstat(exct-grnd)': dAVA}
+            res_Energy['E_pol1_Alpha(E)'] = Polar1_AlphaE
+            res_Energy['E_pol2_Alpha(E)'] = Polar2_AlphaE
+            res_Energy['E_pol1_Alpha(-E)'] = Polar1_Alpha_E
+            res_Energy['E_pol2_Alpha(-E)'] = Polar2_Alpha_E
+            res_Energy['E_pol1_Beta(E,E)'] = Polar1_Beta_EE
+            res_Energy['E_pol1_static_(exct-grnd)'] = Polar1_static_ex_gr
+            res_Energy['E_pol2_static_(exct-grnd)'] = Polar2_static_ex_gr
+            res_Energy['E_pol1_Beta(E,E)_(exct-grnd)'] = Polar1_Beta_EE_ex_gr
+            res_Energy['E_pol1_static_(trans)_(exct)'] = Polar1_static_tr_ex
+            res_Energy['E_pol1_static_(trans)_(grnd)'] = Polar1_static_tr_gr
+            res_Energy['E_pol1_Alpha(E)_(trans)_(grnd)'] = Polar1_AlphaE_tr_gr
+            res_Energy['E_pol1_Alpha(-E)_(trans)_(exct)'] = Polar1_Alpha_E_tr_ex
+            res_Energy['E_pol1_Beta(E,E)_(trans)_(exct)'] = Polar1_Beta_EE_tr_ex
+            res_Energy['E_pol1_Beta(E,E)_(trans)_(grnd)'] = Polar1_Beta_EE_tr_gr
+            
+            res_Pot = {'Pol2-env_static_(exct-grnd)': pot2_dipole_ex_gr}
+            res_Pot['Pol1-env_static_(exct-grnd)'] = pot1_dipole_ex_gr
+            res_Pot['Pol1-env_Beta(E,E)_(exct-grnd)'] = pot1_dipole_betaEE_ex_gr
+            res_Pot['Pol1-env_Beta(E,E)_(trans)'] = pot1_dipole_betaEE_tr
+            res_Pot['Pol1-env_Alpha(E)_(trans)'] = pot1_dipole_AlphaE_tr
+            res_Pot['Pol1-env_Alpha(-E)_(trans)'] = pot1_dipole_Alpha_E_tr
+            res_Pot['Pol1-env_static_(trans)'] = pot1_dipole_static_tr
+            
+#            with energy_units('1/cm'):
+#                print(Eshift.value,dAVA.value,Polar1_AlphaE.value,Polar2_AlphaE.value,Polar1_AlphaE.value+Polar2_AlphaE.value,Polar1_Alpha_E.value,Polar2_Alpha_E.value,Polar1_Alpha_E.value+Polar2_Alpha_E.value)
+#            
+            return res_Energy, res_Pot, TrDip
+        else:
+            raise IOError('Unsupported approximation')
+    
+    def get_SingleDefectProperties_new(self, gr_charge, ex_charge, FG_elstat, struc, index, E01, dAVA=0.0, order=2, approx=1.1):
+        ''' Calculate effects of environment such as transition energy shift
+        and transition dipole change for single defect.
+        
+        Parameters
+        ----------
+        index : list of integer (dimension Natoms_defect)
+            Indexes of all atoms from the defect (starting from 0) for which
+            transition energy and transition dipole is calculated
+        dAVA : float
+            **dAVA = <A|V|A> - <G|V|G>** Difference in electrostatic 
+            interaction energy between defect and environment for defect in 
+            excited state <A|V|A> and in ground state <G|V|G>.
+        order : integer (optional - init = 80)
+            Specify how many SCF steps shoudl be used in calculation  of induced
+            dipoles - according to the used model it should be 2
+        approx : real (optional - init=1.1)
+            Specifies which approximation should be used.
+            
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+
+        Returns
+        -------
+        Eshift : Energy class
+            Transition energy shift for the defect due to the fluorographene
+            environment calculated from structure with single defect. Units are
+            energy managed
+        TrDip : numpy array of real (dimension 3)
+            Total transition dipole for the defect with environment effects 
+            included calculated from structure with single defect (in ATOMIC 
+            UNITS)
+        
+        **Neglecting `tilde{Beta(E)}` is not valid approximation. It shoudl be
+        better to neglect Beta(E,-E) to be consistent with approximation for 
+        interaction energy**
+        
+        Notes
+        ----------
+        dip = Alpha(E)*El_field_TrCharge + Alpha(-E)*El_field_TrCharge 
+        Then final transition dipole of molecule with environment is calculated
+        according to the approximation:
+        
+        **Approximation 1.1:**
+            dip_fin = dip - (Vinter-DE)*Beta(E,E)*El_field_TrCharge + dip_init(1-1/4*Ind_dip_Beta(E,E)*El_field_TrCharge)
+        **Approximation 1.2:**
+            dip_fin = dip - (Vinter-DE)*Beta(E,E)*El_field_TrCharge + dip_init     
+        **Approximation 1.3:**
+            dip_fin = dip - 2*Vinter*Beta(E,E)*El_field_TrCharge + dip_init
+        
+        '''
+
+        # Get TrEsp Transition dipole
+        TrDip_TrEsp = np.dot(self.charge[index],self.coor[index,:]) # vacuum transition dipole for single defect
+        
+        # Set initial charges
+        tr_charge = self.charge[index] 
+        FG_charge_orig = FG_elstat.charge[index]
+        FG_charge = FG_elstat.charge.copy()
+        FG_charge[index] = 0.0
+        
+        FG_elstat.charge[index] = tr_charge
+        Eelstat_trans=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index] = FG_charge_orig
+        
+        # Set distance matrix
+        R_elst = np.tile(struc.coor._value,(self.Nat,1,1))
+        R_pol = np.tile(self.coor,(struc.nat,1,1))
+        R = (R_elst - np.swapaxes(R_pol,0,1))            # R[ii,jj,:]=self.coor[jj]-self.coor[ii]
+        # TODO: Maybe also exclude connected fluorinesto atoms ii 
+        for ii in range(self.Nat):
+            R[ii,ii,:] = 0.0   # self interaction is not permited in potential calculation
+        
+        # Calculate polarization matrixes
+        # TODO: Shift this block to separate function
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=order,eps=1,debug=False)
+        Polar2_AlphaE = self._get_interaction_energy(index,charge=tr_charge,debug=False)
+        dip_AlphaE = np.sum(self.dipole,axis=0)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        E_Pol1_env_AE_tr = np.dot(FG_charge,Potential)
+                
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_E',NN=order,eps=1,debug=False)
+        Polar2_Alpha_E = self._get_interaction_energy(index,charge=tr_charge,debug=False)
+        dip_Alpha_E = np.sum(self.dipole,axis=0)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('Alpha_E',NN=1,eps=1,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        E_Pol1_env_A_E_tr = np.dot(FG_charge,Potential)
+        
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = ex_charge
+        self._calc_dipoles_All('Alpha_st',NN=order,eps=1,debug=False)
+        Polar2_Alpha_st_ex = self._get_interaction_energy(index,charge=ex_charge,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        Polar2_env_Alpha_st_ex = np.dot(FG_charge,Potential)
+        dip_Alpha_st_ex = np.sum(self.dipole,axis=0)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = gr_charge
+        self._calc_dipoles_All('Alpha_st',NN=order,eps=1,debug=False)
+        Polar2_Alpha_st_gr = self._get_interaction_energy(index,charge=gr_charge,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        Polar2_env_Alpha_st_gr = np.dot(FG_charge,Potential)
+        dip_Alpha_st_gr = np.sum(self.dipole,axis=0)
+        
+        # TODO: for pol2-env_static second order is twice and first order is only single times - therefore I need to calculate first and second order separately for environmnet efects
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = ex_charge
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        dip1_Ast_ex = np.sum(self.dipole,axis=0)
+        Potential = potential_dipole(self.dipole,R)
+        Polar1_env_Alpha_st_ex = np.dot(FG_charge,Potential)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = gr_charge
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        dip1_Ast_gr = np.sum(self.dipole,axis=0)
+        Potential = potential_dipole(self.dipole,R)
+        Polar1_env_Alpha_st_gr = np.dot(FG_charge,Potential)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = tr_charge
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        Pol1_env_Alpha_st_tr = np.dot(FG_charge,Potential)
+        
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = tr_charge
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        dip_Beta = np.sum(self.dipole,axis=0)
+        Polar1_Beta_EE = self._get_interaction_energy(index,charge=tr_charge,debug=False)
+        #pot1_dipole_betaEE_tr = potential_dipole(self.dipole,R)
+        
+        # needed for transition dipole
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = gr_charge
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        dip1_AE_gr = np.sum(self.dipole,axis=0)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = ex_charge
+        self._calc_dipoles_All('Alpha_E',NN=1,eps=1,debug=False)
+        dip1_A_E_ex = np.sum(self.dipole,axis=0)
+  
+        # Set the variables to initial state
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = tr_charge
+        
+        if approx==1.1:
+            # Calculate transition energy shift
+            Eshift = dAVA + Polar2_AlphaE - Polar2_Alpha_E
+            Eshift -= (self.VinterFG - dAVA)*Polar1_Beta_EE
+            Eshift += Polar2_Alpha_st_ex - Polar2_Alpha_st_gr
+            Eshift += Polar1_env_Alpha_st_ex - Polar1_env_Alpha_st_gr
+            Eshift += 2*(Polar2_env_Alpha_st_ex - Polar1_env_Alpha_st_ex - Polar2_env_Alpha_st_gr + Polar1_env_Alpha_st_gr)
+            Eshift += Eelstat_trans/E01._value * (2*E_Pol1_env_AE_tr + 4*Pol1_env_Alpha_st_tr + 2*E_Pol1_env_A_E_tr)
+
+            
+            # Calculate transition dipoles for every defect
+            TrDip = TrDip_TrEsp*(1 + Polar1_Beta_EE/2 - 2*(Eelstat_trans/E01._value)*(Eelstat_trans/E01._value) )
+            TrDip += dip_AlphaE + dip_Alpha_E
+            TrDip -= (self.VinterFG - dAVA)*dip_Beta
+            TrDip += (Eelstat_trans/E01._value)*(dip1_Ast_gr - dip1_Ast_ex)
+            TrDip += (Eelstat_trans/E01._value)*(dip1_AE_gr - dip1_A_E_ex)
+            # TODO: Add term for polarization of environment by environment itself
+            
+            # Change to energy class
+            with energy_units('AU'):
+                Eshift = EnergyClass(Eshift)
+                dAVA = EnergyClass(dAVA)
+            
+                res_Energy = {'dE_0-1': Eshift, 'dE_elstat(exct-grnd)': dAVA}
+                res_Energy['E_pol2_Alpha(E)'] = EnergyClass(Polar2_AlphaE)
+                res_Energy['E_pol2_Alpha(-E)'] = EnergyClass(Polar2_Alpha_E)
+                res_Energy['E_pol1_Beta(E,E)'] = EnergyClass(Polar1_Beta_EE)
+                res_Energy['E_pol2_static_(exct-grnd)'] = EnergyClass(Polar2_Alpha_st_ex - Polar2_Alpha_st_gr)
+                res_Energy['Pol1-env_static_(exct-grnd)'] = EnergyClass(Polar1_env_Alpha_st_ex - Polar1_env_Alpha_st_gr)
+                res_Energy['Pol2-env_static_(exct-grnd)'] = EnergyClass(Polar2_env_Alpha_st_ex - Polar2_env_Alpha_st_gr)
+                res_Energy['Pol1-env_Alpha(E)_(trans)'] = EnergyClass(E_Pol1_env_AE_tr)
+                res_Energy['Pol1-env_Alpha(-E)_(trans)'] = EnergyClass(E_Pol1_env_A_E_tr)
+                res_Energy['Pol1-env_static_(trans)'] = EnergyClass(Pol1_env_Alpha_st_tr)
+            
+#            with energy_units('1/cm'):
+#                print(Eshift.value,dAVA.value,res_Energy['E_pol2_Alpha(E)'].value,res_Energy['E_pol2_Alpha(-E)'].value,res_Energy['E_pol2_static_(exct-grnd)'].value,res_Energy['Pol2-env_static_(exct-grnd)'].value)
+            
+            return Eshift, res_Energy, TrDip
+        else:
+            raise IOError('Unsupported approximation')
+            
+    
+    def get_SingleDefect_derivation(self, gr_charge, ex_charge, FG_elstat, struc, index, E01, order=2, approx=1.1):
+        ''' Calculate derivative of single defect property
+        
+        '''
+
+        # Set initial charges
+        tr_charge = self.charge[index] 
+        FG_charge_orig = FG_elstat.charge[index]
+        FG_charge = FG_elstat.charge.copy()
+        FG_charge[index] = 0.0
+        dAVA, dR_dAVA = FG_elstat.get_EnergyShift_and_Derivative()
+        
+        # calculate interaction between transition charges and environment atoms
+        FG_elstat.charge[index] = tr_charge
+        Eelstat_trans=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index] = FG_charge_orig
+        
+        # Set distance matrix - polarizable atoms x electrostatic atoms
+        R_elst = np.tile(struc.coor._value,(self.Nat,1,1))
+        R_pol = np.tile(self.coor,(struc.nat,1,1))
+        R_pol_elst = (R_elst - np.swapaxes(R_pol,0,1))            # R[ii,jj,:]=self.coor[jj]-self.coor[ii]
+        # TODO: Maybe also exclude connected fluorinesto atoms ii 
+        for ii in range(self.Nat):
+            R_pol_elst[ii,ii,:] = 0.0   # self interaction is not permited in potential calculation
+        
+        # Negative values are there because we want to calculate dE/dR and not d(El(Rn)*1/2*Alpha*El(Rn))/dR
+        # calculate first order derivation - Polar1_Alpha(E)
+        dR_pol1_AlphaE = -self._dR_BpA(index, index, tr_charge, tr_charge, 'AlphaE')
+        # calculate first order derivation - Polar1_Alpha(-E)
+        dR_pol1_Alpha_E = -self._dR_BpA(index, index, tr_charge, tr_charge, 'Alpha_E')
+        # calculate second order derivation - Polar2_Alpha(E)
+        dR_pol2_AlphaE = -self._dR_BppA(index, index, tr_charge, tr_charge, 'AlphaE')
+        # calculate second order derivation - Polar2_Alpha(-E)
+        dR_pol2_Alpha_E = -self._dR_BppA(index, index, tr_charge, tr_charge, 'Alpha_E')
+        # calculate first order derivation - Polar1_static for excited and ground charges
+        dR_pol1_static_grnd = -self._dR_BpA(index, index, gr_charge, gr_charge, 'Alpha_st')
+        dR_pol1_static_exct = -self._dR_BpA(index, index, ex_charge, ex_charge, 'Alpha_st')
+        # calculate second order derivation - Polar2_static for excited and ground charges
+        dR_pol2_static_grnd = -self._dR_BppA(index, index, gr_charge, gr_charge, 'Alpha_st')
+        dR_pol2_static_exct = -self._dR_BppA(index, index, ex_charge, ex_charge, 'Alpha_st')
+        # calculate first order derivation - Polar1_Beta(E,E)
+        dR_pol1_BetaEE = -self._dR_BpA(index, index, tr_charge, tr_charge, 'BetaEE')
+        # calculate first order derivation of Palar1-env with static polarizability
+        dR_pol1_env_static_ex_gr, dR_pol1_env_static_ex_gr_env = -self._dR_ApEnv(index,ex_charge-gr_charge,FG_elstat.coor,FG_charge,'Alpha_st')
+        
+        # this could be maybe left out:
+        dR_pol1_env_AlphaE_tr, dR_pol1_env_AlphaE_tr_env = -self._dR_ApEnv(index,tr_charge,FG_elstat.coor,FG_charge,'AlphaE')
+        dR_pol1_env_Alpha_E_tr, dR_pol1_env_Alpha_E_tr_env = -self._dR_ApEnv(index,tr_charge,FG_elstat.coor,FG_charge,'Alpha_E')
+        dR_pol1_env_static_tr, dR_pol1_env_static_tr_env = -self._dR_ApEnv(index,tr_charge,FG_elstat.coor,FG_charge,'Alpha_st')
+        
+        # calculate Beta polarizability 
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index] = tr_charge
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        Polar1_Beta_EE = self._get_interaction_energy(index,charge=tr_charge,debug=False)
+        
+# TODO: Add derivation of pol-env
+        
+# TODO: Split environment contribution and polarizable atoms contribution - both different dimensions
+        if approx==1.1:
+            # Calculate transition energy shift
+            dR_Eshift_env = dR_dAVA
+            dR_Eshift = (dR_pol1_AlphaE + dR_pol2_AlphaE)
+            dR_Eshift -= (dR_pol1_Alpha_E + dR_pol2_Alpha_E)
+            dR_Eshift -= (self.VinterFG - dAVA)*dR_pol1_BetaEE
+            dR_Eshift_env += dR_dAVA*Polar1_Beta_EE
+            dR_Eshift += (dR_pol1_static_exct + dR_pol2_static_exct)
+            dR_Eshift -= (dR_pol1_static_grnd + dR_pol2_static_grnd)
+            dR_Eshift += dR_pol1_env_static_ex_gr
+            dR_Eshift_env += dR_pol1_env_static_ex_gr_env
+
+            # this could be maybe left out
+            dR_Eshift += Eelstat_trans/E01._value * ( 2*dR_pol1_env_AlphaE_tr +
+                                                     4*dR_pol1_env_static_tr +
+                                                     2*dR_pol1_env_Alpha_E_tr)
+            dR_Eshift_env += Eelstat_trans/E01._value * ( 2*dR_pol1_env_AlphaE_tr_env +
+                                                     4*dR_pol1_env_static_tr_env +
+                                                     2*dR_pol1_env_Alpha_E_tr_env)
+            
+            
+            
+#            Eshift += 2*(Polar2_env_Alpha_st_ex - Polar1_env_Alpha_st_ex - Polar2_env_Alpha_st_gr + Polar1_env_Alpha_st_gr)
+
+
+            return dR_Eshift, dR_Eshift_env
+        else:
+            raise IOError('Unsupported approximation')
     
     def get_HeterodimerProperties(self, index1, index2, Eng1, Eng2, dAVA=0.0, dBVB=0.0, order=80, approx=1.1):
         ''' Calculate effects of the environment for structure with two different
@@ -1157,15 +1941,24 @@ class Dielectric:
         TrDip2 : numpy array of real (dimension 3)
             Total transition dipole for the first defect with environment effects 
             included calculated from heterodimer structure (in ATOMIC UNITS)
+        AllDipAE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(E) atomic polarizability
+        AllDipA_E : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(-E) atomic polarizability
+        AllDipBE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Beta(E,E) atomic polarizability
         '''
 
         # Get TrEsp interaction energy
         E_TrEsp = self.get_TrEsp_Eng(index1, index2)
         
         # Calculate polarization matrixes
-        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2 = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
-        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2 = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
-        PolarMat_Beta, dip_Beta1, dip_Beta2 = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)     
+        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2, AllDipAE1, AllDipAE2 = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
+        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2, AllDipA_E1, AllDipA_E2 = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
+        PolarMat_Beta, dip_Beta1, dip_Beta2, AllDipBE1, AllDipBE2 = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)     
         
         # calculate new eigenstates and energies
         HH=np.zeros((2,2),dtype='f8')
@@ -1180,6 +1973,7 @@ class Dielectric:
         Energy,Coeff=np.linalg.eigh(HH)
         
         d_esp=np.sqrt( E_TrEsp**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2 )          # sqrt( (<A|V|B>)**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2  )
+        
         
         # Calculate interaction energies
         if approx==1.1:
@@ -1218,10 +2012,828 @@ class Dielectric:
                 Eshift1 = EnergyClass(Eshift1)
                 Eshift2 = EnergyClass(Eshift2)
             
-            return J_inter, Eshift1, Eshift2, TrDip1, TrDip2
+            return J_inter, Eshift1, Eshift2, TrDip1, TrDip2, AllDipAE1, AllDipA_E1, AllDipBE1
         else:
             raise IOError('Unsupported approximation')
             
+    def _TEST_HeterodimerProperties(self, gr_charge1, ex_charge1, gr_charge2, ex_charge2, FG_charge, struc, index1, index2, Eng1, Eng2, dAVA=0.0, dBVB=0.0, order=80, approx=1.1):
+        ''' Calculate effects of the environment for structure with two different
+        defects such as interaction energy, site transition energy shifts and 
+        changes in transition dipoles
+
+        Parameters
+        ----------
+        index1 : list of integer (dimension Natoms_defect1)
+            Indexes of all atoms from the first defect (starting from 0)
+        index2 : list of integer (dimension Natoms_defect2)
+            Indexes of all atoms from the second defect (starting from 0)
+        Eng1 : float 
+            Vacuum transition energy of the first defect in ATOMIC UNITS (Hartree)
+        Eng2 : float 
+            Vacuum transition energy of the second defect in ATOMIC UNITS (Hartree)
+        dAVA : float
+            **dAVA = <A|V|A> - <G|V|G>** Difference in electrostatic 
+            interaction energy between first defect the and environment for the 
+            defect in excited state <A|V|A> and in ground state <G|V|G>.
+        dBVB : float
+            **dBVB = <B|V|B> - <G|V|G>** Difference in electrostatic 
+            interaction energy between second defect and the environment for the 
+            defect in excited state <B|V|B> and in ground state <G|V|G>.
+        order : integer (optional - init = 80)
+            Specify how many SCF steps shoudl be used in calculation of induced
+            dipoles - according to the used model it should be 2
+        approx : real (optional - init=1.1)
+            Specifies which approximation should be used.
+            
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+        
+        Returns
+        -------
+        J_inter : Energy class
+            Interaction energy with effects of environment included. Units are 
+            energy managed
+        Eshift1 : Energy class
+            Transition energy shift for the first defect due to fluorographene
+            environment calculated from heterodymer structure. Units are energy
+            managed
+        Eshift2 : Energy class
+            Transition energy shift for the second defect due to fluorographene
+            environment calculated from heterodymer structure. Units are energy
+            managed
+        TrDip1 : numpy array of real (dimension 3)
+            Total transition dipole for the first defect with environment effects 
+            included calculated from heterodimer structure (in ATOMIC UNITS)
+        TrDip2 : numpy array of real (dimension 3)
+            Total transition dipole for the first defect with environment effects 
+            included calculated from heterodimer structure (in ATOMIC UNITS)
+        AllDipAE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(E) atomic polarizability
+        AllDipA_E : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(-E) atomic polarizability
+        AllDipBE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Beta(E,E) atomic polarizability
+        '''
+
+        res = {}
+
+        # Get TrEsp interaction energy
+        E_TrEsp = self.get_TrEsp_Eng(index1, index2)
+        
+        # Calculate polarization matrixes (1-2)
+        PolarMat1_AlphaE, dip_AlphaE1, dip_AlphaE2, AllDipAE1, AllDipAE2 = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=1)
+        PolarMat1_Alpha_E, dip_Alpha_E1, dip_Alpha_E2, AllDipA_E1, AllDipA_E2 = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=1)
+        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2, AllDipAE1, AllDipAE2 = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=2)
+        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2, AllDipA_E1, AllDipA_E2 = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=2)
+        PolarMat_Beta, dip_Beta1, dip_Beta2, AllDipBE1, AllDipBE2 = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)     
+        
+        res["E_pol2_A(E)"] = (PolarMat_AlphaE - PolarMat1_AlphaE) * conversion_facs_energy["1/cm"]
+        res["E_pol2_A(-E)"] = (PolarMat_Alpha_E - PolarMat1_Alpha_E) * conversion_facs_energy["1/cm"]
+        res["E_pol2_B(E,E)"] = PolarMat_Beta
+        
+        
+        """ Aditional first order contribution """
+        # gr_charge1, ex_charge1, gr_charge2, ex_charge2
+        tr_charge1 = self.charge[index1]
+        tr_charge2 = self.charge[index2]
+        self.charge[index1] = gr_charge1
+        self.charge[index2] = ex_charge2
+        PolarMat_Alpha_st_gr_ex, dip_Alpha_st1_gr, dip_Alpha_st2_ex, AllDipA_st1_gr, AllDipA_st2_ex = self._fill_Polar_matrix(index1,index2,typ='Alpha_st',order=1)
+        
+        self.charge[index1] = ex_charge1
+        self.charge[index2] = gr_charge2
+        PolarMat_Alpha_st_ex_gr, dip_Alpha_st1_ex, dip_Alpha_st2_gr, AllDipA_st1_ex, AllDipA_st2_gr = self._fill_Polar_matrix(index1,index2,typ='Alpha_st',order=1)
+        
+        # charges for the ground state and excited state are the same => correct
+        # difference between first and second defect is in non symetrical charges - repeat the fit with symmetry constrains
+
+        PolarMat_Alpha_st = np.zeros((2,2),dtype='f8')
+        PolarMat_Alpha_st[0,0] = np.sum(PolarMat_Alpha_st_ex_gr) # PolarMat_Alpha_st_ex_gr[0,0] + PolarMat_Alpha_st_ex_gr[1,1] + 2*PolarMat_Alpha_st_ex_gr[0,1]
+        PolarMat_Alpha_st[1,1] = np.sum(PolarMat_Alpha_st_gr_ex) # PolarMat_Alpha_st_gr_ex[0,0] + PolarMat_Alpha_st_gr_ex[1,1] + 2*PolarMat_Alpha_st_gr_ex[0,1]
+        
+        # pol1-env
+        #-----------------------------------
+        # Set distance matrix
+        R_elst = np.tile(struc.coor._value,(self.Nat,1,1))
+        R_pol = np.tile(self.coor,(struc.nat,1,1))
+        R = (R_elst - np.swapaxes(R_pol,0,1))            # R[ii,jj,:]=self.coor[jj]-self.coor[ii]
+        # if normaly ordered first are carbon atoms and then are fluorine atoms - for carbon atoms same indexes in pol_mol as in struc
+        for ii in range(self.Nat):
+            R[ii,ii,:] = 0.0   # self interaction is not permited in potential calculation
+# TODO: Maybe also exclude connected fluorinesto atoms ii
+
+        # Calculate potential of induced dipoles 
+        pot1_dipole_Alpha_st1_gr = potential_dipole(AllDipA_st1_gr,R)
+        pot1_dipole_Alpha_st1_ex = potential_dipole(AllDipA_st1_ex,R)
+        pot1_dipole_Alpha_st2_gr = potential_dipole(AllDipA_st2_gr,R)
+        pot1_dipole_Alpha_st2_ex = potential_dipole(AllDipA_st2_ex,R)
+        
+        # calculate interaction energies with environment 
+        FG_charge_tmp = FG_charge.charge.copy()
+        FG_charge_tmp[index1] = 0.0
+        FG_charge_tmp[index2] = 0.0
+        
+        E_Pol1_env_static_gr1_FG = np.dot(FG_charge_tmp,pot1_dipole_Alpha_st1_gr)
+        E_Pol1_env_static_ex1_FG = np.dot(FG_charge_tmp,pot1_dipole_Alpha_st1_ex)
+        E_Pol1_env_static_gr2_FG = np.dot(FG_charge_tmp,pot1_dipole_Alpha_st2_gr)
+        E_Pol1_env_static_ex2_FG = np.dot(FG_charge_tmp,pot1_dipole_Alpha_st2_ex)
+        
+        PolarMat_Alpha_st[0,0] = 2*( E_Pol1_env_static_ex1_FG + E_Pol1_env_static_gr2_FG )
+        PolarMat_Alpha_st[1,1] = 2*( E_Pol1_env_static_gr1_FG + E_Pol1_env_static_ex2_FG )
+
+        # return transition charges back
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = tr_charge2
+        
+        """ Aditional second order contribution - Comparison of magnitudes """
+        # Calculate polarization matrix A_grnd B_exct
+        self.charge[index1] = gr_charge1
+        self.charge[index2] = ex_charge2
+        PolarMat_Beta_gr_ex, dip_Beta1_gr, dip_Beta2_ex, AllDipBE1_gr, AllDipBE2_ex = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=1)
+        
+        # Calculate polarization matrix A_exct B_grnd
+        self.charge[index1] = ex_charge1
+        self.charge[index2] = gr_charge2
+        PolarMat_Beta_ex_gr, dip_Beta1_ex, dip_Beta2_gr, AllDipBE1_ex, AllDipBE2_gr = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=1)
+        
+        res["E_pol1_B(E,E)_(A_exct,B_grnd)"]  = PolarMat_Beta_ex_gr
+        res["E_pol1_B(E,E)_(A_grnd,B_exct)"]  = PolarMat_Beta_gr_ex
+        
+        # calculate pol-env for previous:
+        pot1A_dipole_BEE_gr = potential_dipole(AllDipBE1_gr,R)
+        pot1A_dipole_BEE_ex = potential_dipole(AllDipBE1_ex,R)
+        pot1B_dipole_BEE_gr = potential_dipole(AllDipBE2_gr,R)
+        pot1B_dipole_BEE_ex = potential_dipole(AllDipBE2_ex,R)
+        PolarMat_env_Beta_ex = np.zeros((2,2),dtype="f8")
+        PolarMat_env_Beta_gr = np.zeros((2,2),dtype="f8")
+        PolarMat_env_Beta_ex[0,0] = np.dot(FG_charge_tmp,pot1A_dipole_BEE_ex)
+        PolarMat_env_Beta_ex[1,1] = np.dot(FG_charge_tmp,pot1B_dipole_BEE_ex)
+        PolarMat_env_Beta_gr[0,0] = np.dot(FG_charge_tmp,pot1B_dipole_BEE_gr)
+        PolarMat_env_Beta_gr[1,1] = np.dot(FG_charge_tmp,pot1A_dipole_BEE_gr)
+        res["E_pol1-env_B(E,E)_grnd"] = PolarMat_env_Beta_gr
+        res["E_pol1-env_B(E,E)_exct"] = PolarMat_env_Beta_ex
+        
+        # Calculate secon order contribution to the first order quantities
+        self.charge[index1] = gr_charge1
+        self.charge[index2] = ex_charge2
+        PolarMat2_Alpha_st_gr_ex, dumm, dumm, AllDipA2_st1_gr, AllDipA2_st2_ex = self._fill_Polar_matrix(index1,index2,typ='Alpha_st',order=2)
+        PolarMat2_Alpha_st_gr_ex = PolarMat2_Alpha_st_gr_ex - PolarMat_Alpha_st_gr_ex
+        
+        self.charge[index1] = ex_charge1
+        self.charge[index2] = gr_charge2
+        PolarMat2_Alpha_st_ex_gr, dumm, dumm, AllDipA2_st1_ex, AllDipA2_st2_gr = self._fill_Polar_matrix(index1,index2,typ='Alpha_st',order=2)
+        PolarMat2_Alpha_st_ex_gr = PolarMat2_Alpha_st_ex_gr - PolarMat_Alpha_st_ex_gr
+        res["E_pol2_st_(A_exct,B_grnd)"] = PolarMat2_Alpha_st_ex_gr * conversion_facs_energy["1/cm"]
+        res["E_pol2_st_(A_grnd,B_exct)"] = PolarMat2_Alpha_st_gr_ex * conversion_facs_energy["1/cm"]
+        
+        pot2A_dipole_st_gr = potential_dipole(AllDipA2_st1_gr - AllDipA_st1_gr,R)
+        pot2A_dipole_st_ex = potential_dipole(AllDipA2_st1_ex - AllDipA_st1_ex,R)
+        pot2B_dipole_st_gr = potential_dipole(AllDipA2_st2_gr - AllDipA_st2_gr,R)
+        pot2B_dipole_st_ex = potential_dipole(AllDipA2_st2_ex - AllDipA_st2_ex,R)
+        PolarMat2_env_st_ex = np.zeros((2,2),dtype="f8")
+        PolarMat2_env_st_gr = np.zeros((2,2),dtype="f8")
+        PolarMat2_env_st_ex[0,0] = np.dot(FG_charge_tmp,pot2A_dipole_st_ex)
+        PolarMat2_env_st_ex[1,1] = np.dot(FG_charge_tmp,pot2B_dipole_st_ex)
+        PolarMat2_env_st_gr[0,0] = np.dot(FG_charge_tmp,pot2B_dipole_st_gr)
+        PolarMat2_env_st_gr[1,1] = np.dot(FG_charge_tmp,pot2A_dipole_st_gr)
+        res["E_pol2-env_st_grnd"] = PolarMat2_env_st_gr * conversion_facs_energy["1/cm"]
+        res["E_pol2-env_st_exct"] = PolarMat2_env_st_ex * conversion_facs_energy["1/cm"]
+        
+        
+        
+        
+        # Calculate polarization matrixes A_grnd B_0->1
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        E_AB_pol1_tr_gr_1 = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        E_A_pol1_tr_gr = self._get_interaction_energy(index1,charge=gr_charge1,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        self.charge[index2] = tr_charge2
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        E_AB_pol1_gr_tr_1 = self._get_interaction_energy(index1,charge=gr_charge1,debug=False)
+        E_B_pol1_tr_gr = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        
+        self.charge[index1] = gr_charge1
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        E_AB_pol1_gr_tr_2 = self._get_interaction_energy(index2,charge=tr_charge2,debug=False)
+        
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        self.charge[index2] = gr_charge2
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        E_AB_pol1_tr_gr_2 = self._get_interaction_energy(index1,charge=tr_charge1,debug=False)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        # return transition charges back
+        if (gr_charge1!=gr_charge2).any() :
+            raise IOError("Heterodimer should have the same ground state charges")
+        # return transition charges back
+        if (tr_charge1!=tr_charge2).any() :
+            raise IOError("Heterodimer should have the same transition charges")
+        self.charge[index1] = gr_charge1
+        self.charge[index2] = tr_charge2
+        PolarMat_AlphaE_gr_tr, dip_AlphaE1_gr, dip_AlphaE2_tr, AllDipAE1_gr, AllDipAE2_tr = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=1)
+        E_AB_pol1_gr_tr = PolarMat_AlphaE_gr_tr[0,1]
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = gr_charge2
+        PolarMat_AlphaE_gr_tr, dip_AlphaE1_gr, dip_AlphaE2_tr, AllDipAE1_gr, AllDipAE2_tr = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=1)
+        E_AB_pol1_tr_gr = PolarMat_AlphaE_gr_tr[0,1]
+        
+        
+        res["E_pol1_B(E,E)_(tr_gr,ex)"] = np.zeros((2,2),dtype="f8")
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        res["E_pol1_B(E,E)_(tr_gr,ex)"][0,0] = self._get_interaction_energy(index1,charge=gr_charge1,debug=False)
+        res["E_pol1_B(E,E)_(tr_gr,ex)"][0,1] = self._get_interaction_energy(index1,charge=ex_charge1,debug=False)
+        self.charge[index1] = np.zeros(len(index2),dtype='f8')
+        self.charge[index2] = tr_charge2
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self._calc_dipoles_All('BetaEE',NN=1,eps=1,debug=False)
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        res["E_pol1_B(E,E)_(tr_gr,ex)"][1,0] = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        res["E_pol1_B(E,E)_(tr_gr,ex)"][1,1] = self._get_interaction_energy(index2,charge=ex_charge2,debug=False)
+        
+        # return transition charges back
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = tr_charge2
+        
+        # compare electrostatic energies - TEST
+        VAB_0101 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = ex_charge1
+        VAB_1101 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = gr_charge1
+        VAB_0001 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index2] = gr_charge2
+        VAB_0000 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = ex_charge1
+        self.charge[index2] = ex_charge2
+        VAB_1111 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index2] = gr_charge2
+        VAB_1100 = self.get_TrEsp_Eng(index1, index2)
+        charge_orig1 = FG_charge.charge[index1]
+        charge_orig2 = FG_charge.charge[index2]
+        FG_charge.charge[index1] = gr_charge1
+        FG_charge.charge[index2] = 0.0
+        E_grnd=FG_charge.get_EnergyShift()
+        FG_charge.charge[index1] = ex_charge1
+        FG_charge.charge[index2] = 0.0
+        E_exct=FG_charge.get_EnergyShift()
+        FG_charge.charge[index1] = tr_charge1
+        FG_charge.charge[index2] = 0.0
+        E_trans=FG_charge.get_EnergyShift()
+        
+        FG_charge.charge[index1] = charge_orig1
+        FG_charge.charge[index2] = charge_orig2
+        
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = tr_charge2
+
+        # calculate new eigenstates and energies
+        HH=np.zeros((2,2),dtype='f8')
+        if Eng1<Eng2:
+            HH[0,0] = Eng1+dAVA
+            HH[1,1] = Eng2+dBVB
+        else:
+            HH[1,1] = Eng1+dAVA
+            HH[0,0] = Eng2+dBVB
+        HH[0,1] = E_TrEsp
+        HH[1,0] = HH[0,1]
+        Energy,Coeff=np.linalg.eigh(HH)
+        
+        d_esp=np.sqrt( E_TrEsp**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2 )          # sqrt( (<A|V|B>)**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2  )
+        
+        
+        # Calculate interaction energies
+        if approx==1.1:
+            # Calculate Total polarizability matrix
+            PolarMat = PolarMat_AlphaE + PolarMat_Alpha_E + PolarMat_Alpha_st + PolarMat_Beta*(dAVA/2 + dBVB/2 - self.VinterFG)
+            
+            # Calculate interaction energies
+            C1 = Coeff.T[0]
+            E1 = Energy[0] + np.dot(C1, np.dot(PolarMat - d_esp*PolarMat_Beta, C1.T))
+            
+            C2 = Coeff.T[1]
+            E2 = Energy[1] + np.dot(C2, np.dot(PolarMat + d_esp*PolarMat_Beta, C2.T))
+            
+            J_inter = np.sqrt( (E2 - E1)**2 - (Eng2 - Eng1)**2 )/2*np.sign(E_TrEsp)
+            
+            # Calculate energy shifts for every defect
+            Eshift1 = dAVA + PolarMat_AlphaE[0,0] - PolarMat_Alpha_E[1,1]
+            Eshift1 -= (self.VinterFG - dAVA)*PolarMat_Beta[0,0]
+            
+            Eshift2 = dBVB + PolarMat_AlphaE[1,1] - PolarMat_Alpha_E[0,0]
+            Eshift2 -= (self.VinterFG - dBVB)*PolarMat_Beta[1,1]
+            
+            # Calculate transition dipoles for every defect
+            TrDip1 = np.dot(self.charge[index1],self.coor[index1,:]) # vacuum transition dipole for single defect
+            TrDip1 = TrDip1*(1 + PolarMat_Beta[0,0]/4) + dip_AlphaE1 + dip_Alpha_E1
+            TrDip1 -= (self.VinterFG - dAVA)*dip_Beta1
+            
+            TrDip2 = np.dot(self.charge[index2],self.coor[index2,:]) # vacuum transition dipole for single defect
+            TrDip2 = TrDip2*(1 + PolarMat_Beta[1,1]/4) + dip_AlphaE2 + dip_Alpha_E2
+            TrDip2 -= (self.VinterFG - dBVB)*dip_Beta2
+            
+        
+            # Change to energy class
+            with energy_units('AU'):
+                J_inter = EnergyClass(J_inter)
+                Eshift1 = EnergyClass(Eshift1)
+                Eshift2 = EnergyClass(Eshift2)
+                E_pol_static1_ex_gr = EnergyClass(PolarMat_Alpha_st_ex_gr[0,0]-PolarMat_Alpha_st_gr_ex[0,0])
+                E_pol_static2_ex_gr = EnergyClass(PolarMat_Alpha_st_gr_ex[1,1]-PolarMat_Alpha_st_ex_gr[1,1])
+                E_pol_env_static1_ex_gr = EnergyClass(E_Pol1_env_static_ex1_FG - E_Pol1_env_static_gr1_FG)
+                E_pol_env_static2_ex_gr = EnergyClass(E_Pol1_env_static_ex2_FG - E_Pol1_env_static_gr2_FG)
+                
+                VAB_0101 = EnergyClass(VAB_0101)
+                VAB_1101 = EnergyClass(VAB_1101)
+                VAB_0001 = EnergyClass(VAB_0001)
+                VAB_0000 = EnergyClass(VAB_0000)
+                VAB_1111 = EnergyClass(VAB_1111)
+                VAB_1100 = EnergyClass(VAB_1100)
+                E_grnd = EnergyClass(E_grnd)
+                E_exct = EnergyClass(E_exct)
+                E_trans = EnergyClass(E_trans)
+                
+                E_AB_pol1_gr_tr = EnergyClass(E_AB_pol1_gr_tr)
+                E_AB_pol1_tr_gr = EnergyClass(E_AB_pol1_tr_gr)
+                E_AB_pol1_gr_tr_1 = EnergyClass(E_AB_pol1_gr_tr_1)
+                E_AB_pol1_tr_gr_1 = EnergyClass(E_AB_pol1_tr_gr_1)
+                E_AB_pol1_gr_tr_2 = EnergyClass(E_AB_pol1_gr_tr_2)
+                E_AB_pol1_tr_gr_2 = EnergyClass(E_AB_pol1_tr_gr_2)
+                E_A_pol1_tr_gr = EnergyClass(E_A_pol1_tr_gr)
+                E_B_pol1_tr_gr = EnergyClass(E_B_pol1_tr_gr)
+
+            with energy_units("1/cm"):
+                print("EA_pol1_s_ex_gr EA_pol1_env_s_ex_gr EAB_pol1_tr_gr EA_pol1_tr_gr")
+                print("  {:9.4f}        {:9.4f}           {:9.4f}       {:9.4f}".format(
+                                E_pol_static1_ex_gr.value,
+                                E_pol_env_static1_ex_gr.value,
+                                E_AB_pol1_tr_gr.value,
+                                E_A_pol1_tr_gr.value))
+                print("   VAB_0101       VAB_1101        VAB_0001       VAB_0000      VAB_1111     VAB_1100       E_grnd        E_exct        E_trans")
+                print(VAB_0101.value, VAB_1101.value, VAB_0001.value, VAB_0000.value, VAB_1111.value, VAB_1100.value, E_grnd.value, E_exct.value, E_trans.value)
+
+
+#            res["E_pol2_A(E)"]
+#            res["E_pol2_A(-E)"]
+#            res["E_pol2_B(E,E)"]
+#            res["E_pol1_B(E,E)_(A_exct,B_grnd)"]
+#            res["E_pol1_B(E,E)_(A_grnd,B_exct)"]
+#            res["E_pol1-env_B(E,E)_grnd"]
+#            res["E_pol1-env_B(E,E)_exct"]
+#            res["E_pol2_st_(A_exct,B_grnd)"]
+#            res["E_pol2_st_(A_grnd,B_exct)"]
+#            res["E_pol2-env_st_grnd"]
+#            res["E_pol2-env_st_exct"]
+    
+
+            return J_inter, Eshift1, Eshift2, TrDip1, TrDip2, AllDipAE1, AllDipA_E1, AllDipBE1, res
+        else:
+            raise IOError('Unsupported approximation')
+            
+            
+    def get_HeterodimerProperties_new(self, gr_charge1, ex_charge1, gr_charge2, ex_charge2, FG_elstat, struc, index1, index2, Eng1, Eng2, eps, dAVA=0.0, dBVB=0.0, order=2, approx=1.1):
+        ''' Calculate effects of the environment for structure with two different
+        defects such as interaction energy, site transition energy shifts and 
+        changes in transition dipoles
+
+        Parameters
+        ----------
+        index1 : list of integer (dimension Natoms_defect1)
+            Indexes of all atoms from the first defect (starting from 0)
+        index2 : list of integer (dimension Natoms_defect2)
+            Indexes of all atoms from the second defect (starting from 0)
+        Eng1 : float 
+            Vacuum transition energy of the first defect in ATOMIC UNITS (Hartree)
+        Eng2 : float 
+            Vacuum transition energy of the second defect in ATOMIC UNITS (Hartree)
+        dAVA : float
+            **dAVA = <A|V|A> - <G|V|G>** Difference in electrostatic 
+            interaction energy between first defect the and environment for the 
+            defect in excited state <A|V|A> and in ground state <G|V|G>.
+        dBVB : float
+            **dBVB = <B|V|B> - <G|V|G>** Difference in electrostatic 
+            interaction energy between second defect and the environment for the 
+            defect in excited state <B|V|B> and in ground state <G|V|G>.
+        order : integer (optional - init = 80)
+            Specify how many SCF steps shoudl be used in calculation of induced
+            dipoles - according to the used model it should be 2
+        approx : real (optional - init=1.1)
+            Specifies which approximation should be used.
+            
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+        
+        Returns
+        -------
+        J_inter : Energy class
+            Interaction energy with effects of environment included. Units are 
+            energy managed
+        Eshift1 : Energy class
+            Transition energy shift for the first defect due to fluorographene
+            environment calculated from heterodymer structure. Units are energy
+            managed
+        Eshift2 : Energy class
+            Transition energy shift for the second defect due to fluorographene
+            environment calculated from heterodymer structure. Units are energy
+            managed
+        TrDip1 : numpy array of real (dimension 3)
+            Total transition dipole for the first defect with environment effects 
+            included calculated from heterodimer structure (in ATOMIC UNITS)
+        TrDip2 : numpy array of real (dimension 3)
+            Total transition dipole for the first defect with environment effects 
+            included calculated from heterodimer structure (in ATOMIC UNITS)
+        AllDipAE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(E) atomic polarizability
+        AllDipA_E : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Alpha(-E) atomic polarizability
+        AllDipBE : numpy array of float (dimension Natoms x 3)
+            Induced atomic dipole moments for all atoms in the environment by 
+            the first defect with Beta(E,E) atomic polarizability
+        '''
+
+        # eps = EnergyClass
+
+        res = {}
+
+        # get transition charge
+        tr_charge1 = self.charge[index1]
+        tr_charge2 = self.charge[index2]
+        
+        # Get fluorographene charges 
+        charge_orig1 = FG_elstat.charge[index1]
+        charge_orig2 = FG_elstat.charge[index2]
+        FG_charge = FG_elstat.charge.copy()
+        FG_charge[index1] = 0.0
+        FG_charge[index2] = 0.0
+        
+        # Set distance matrix for interaction of defects with the environmnet 
+        R_elst = np.tile(struc.coor._value,(self.Nat,1,1))
+        R_pol = np.tile(self.coor,(struc.nat,1,1))
+        R = (R_elst - np.swapaxes(R_pol,0,1))            # R[ii,jj,:]=self.coor[jj]-self.coor[ii]
+        # if normaly ordered first are carbon atoms and then are fluorine atoms - for carbon atoms same indexes in pol_mol as in struc
+# TODO: Maybe also exclude connected fluorinesto atoms ii 
+        for ii in range(self.Nat):
+            R[ii,ii,:] = 0.0   # self interaction is not permited in potential calculation
+        
+        # Get vaccuum interaction energies (V0100 != V0001) - ground state electron density symmetric to inversion and transition density antisymmetric to inversion - change of sign for some cases
+        E_TrEsp = self.get_TrEsp_Eng(index1, index2)
+        VAB_0101 = E_TrEsp
+        self.charge[index1] = ex_charge1
+        VAB_1101 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = gr_charge1
+        VAB_0001 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = ex_charge2
+        VAB_0111 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index2] = gr_charge2
+        VAB_0100 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = gr_charge1
+        VAB_0000 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = ex_charge1
+        VAB_1100 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index2] = ex_charge2
+        VAB_1111 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = gr_charge1
+        VAB_0011 = self.get_TrEsp_Eng(index1, index2)
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = tr_charge2
+        
+        # get electroctatic interaction energy of defects with environment 
+        FG_elstat.charge[index1] = gr_charge1
+        FG_elstat.charge[index2] = np.zeros(len(index2),dtype='f8')
+        EA_grnd=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index1] = ex_charge1
+        EA_exct=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index1] = tr_charge1
+        EA_trans=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index1] = np.zeros(len(index1),dtype='f8')
+        FG_elstat.charge[index2] = gr_charge2
+        EB_grnd=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index2] = ex_charge2
+        EB_exct=FG_elstat.get_EnergyShift()
+        FG_elstat.charge[index2] = tr_charge2
+        EB_trans=FG_elstat.get_EnergyShift()
+        
+        # Calculate polarization matrixes for the second order contributions
+        PolarMat_AlphaE, dip_AlphaE1, dip_AlphaE2, AllDipAE1, AllDipAE2 = self._fill_Polar_matrix(index1,index2,typ='AlphaE',order=order)
+        PolarMat_Alpha_E, dip_Alpha_E1, dip_Alpha_E2, AllDipA_E1, AllDipA_E2 = self._fill_Polar_matrix(index1,index2,typ='Alpha_E',order=order)
+        self.charge[index1] = gr_charge1
+        self.charge[index2] = ex_charge2
+        PolarMat_Alpha_st_gr_ex, dip_Alpha_st1_gr, dip_Alpha_st2_ex, AllDipA_st1_gr, AllDipA_st2_ex = self._fill_Polar_matrix(index1,index2,typ='Alpha_st',order=order)
+        self.charge[index1] = ex_charge1
+        self.charge[index2] = gr_charge2
+        PolarMat_Alpha_st_ex_gr, dip_Alpha_st1_ex, dip_Alpha_st2_gr, AllDipA_st1_ex, AllDipA_st2_gr = self._fill_Polar_matrix(index1,index2,typ='Alpha_st',order=order)
+        
+        res["E_pol2_A(E)"] = PolarMat_AlphaE
+        res["E_pol2_A(-E)"] = PolarMat_Alpha_E
+        
+        PolarMat_Alpha_st = np.zeros((2,2),dtype='f8')
+        PolarMat_Alpha_st[0,0] = np.sum(PolarMat_Alpha_st_ex_gr) # PolarMat_Alpha_st_ex_gr[0,0] + PolarMat_Alpha_st_ex_gr[1,1] + 2*PolarMat_Alpha_st_ex_gr[0,1]
+        PolarMat_Alpha_st[1,1] = np.sum(PolarMat_Alpha_st_gr_ex) # PolarMat_Alpha_st_gr_ex[0,0] + PolarMat_Alpha_st_gr_ex[1,1] + 2*PolarMat_Alpha_st_gr_ex[0,1]
+        
+        # Add Alpha static pol-env contribution
+        pot2_A_dipole_Alpha_st_gr = potential_dipole(AllDipA_st1_gr,R)
+        pot2_A_dipole_Alpha_st_ex = potential_dipole(AllDipA_st1_ex,R)
+        pot2_B_dipole_Alpha_st_gr = potential_dipole(AllDipA_st2_gr,R)
+        pot2_B_dipole_Alpha_st_ex = potential_dipole(AllDipA_st2_ex,R)
+        EA_Pol2_env_static_gr_FG = np.dot(FG_charge,pot2_A_dipole_Alpha_st_gr)
+        EA_Pol2_env_static_ex_FG = np.dot(FG_charge,pot2_A_dipole_Alpha_st_ex)
+        EB_Pol2_env_static_gr_FG = np.dot(FG_charge,pot2_B_dipole_Alpha_st_gr)
+        EB_Pol2_env_static_ex_FG = np.dot(FG_charge,pot2_B_dipole_Alpha_st_ex)
+        PolarMat_Alpha_st[0,0] = 2*( EA_Pol2_env_static_ex_FG + EB_Pol2_env_static_gr_FG )
+        PolarMat_Alpha_st[1,1] = 2*( EA_Pol2_env_static_gr_FG + EB_Pol2_env_static_ex_FG )
+        res["E_pol2_A_static"] = PolarMat_Alpha_st
+        
+        # first order electrostatic contribution
+        ElstatMat_1 = np.zeros((2,2), dtype='f8')
+        ElstatMat_1[0,0] = (EA_trans + VAB_0100)**2 - (EB_trans + VAB_1101)**2
+        ElstatMat_1[1,1] = (EB_trans + VAB_0001)**2 - (EA_trans + VAB_0111)**2
+        ElstatMat_1[0,1] = (EA_trans + VAB_0100)*(EB_trans + VAB_0001) - (EA_trans + VAB_0111)*(EB_trans + VAB_1101)
+        ElstatMat_1[1,0] = ElstatMat_1[0,1]
+        ElstatMat_1 = ElstatMat_1/eps._value
+        res['E_elstat_1'] = ElstatMat_1
+# TODO: This electrostatic contribution should be small print and see if it could be neglected
+        
+        # calculate polarization matrixes for contriutions containing only first order polarizabilities
+        PolarMat_Beta, dip_Beta1, dip_Beta2, AllDipBE1, AllDipBE2 = self._fill_Polar_matrix(index1,index2,typ='BetaEE',order=order//2)   
+        PolarMat_Beta_scaled = ( (VAB_1100 - VAB_0000 + VAB_0011 - VAB_0000 + EA_exct - EA_grnd + EB_exct - EB_grnd)/2 - self.VinterFG)*PolarMat_Beta
+        res["E_pol2_B(E,E)"] = PolarMat_Beta
+        res["E_pol2_B(E,E)_scaled"] = PolarMat_Beta_scaled
+# TODO: Calculate and check contribution from d_epsilon
+        
+        # calculate contribution from 0-1 ground interaction with alpha(E) polarizability 
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        E_AB_pol1_tr_gr = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        E_A_pol1_tr_gr = self._get_interaction_energy(index1,charge=gr_charge1,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        E_A_pol1_env_tr = np.dot(FG_charge,Potential)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        self.charge[index2] = tr_charge2
+        self._calc_dipoles_All('AlphaE',NN=1,eps=1,debug=False)
+        self.charge[index2] = np.zeros(len(index1),dtype='f8')
+        E_AB_pol1_gr_tr = self._get_interaction_energy(index1,charge=gr_charge1,debug=False)
+        E_B_pol1_tr_gr = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        E_B_pol1_env_tr = np.dot(FG_charge,Potential)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        PolarMat_Alpha_tr_gr = np.zeros((2,2),dtype='f8')
+        PolarMat_Alpha_tr_gr[0,0] = E_A_pol1_tr_gr + E_AB_pol1_tr_gr + E_A_pol1_env_tr
+        PolarMat_Alpha_tr_gr[0,1] = E_B_pol1_tr_gr + E_AB_pol1_gr_tr + E_B_pol1_env_tr
+        PolarMat_Alpha_tr_gr[1,0] = PolarMat_Alpha_tr_gr[0,0]
+        PolarMat_Alpha_tr_gr[1,1] = PolarMat_Alpha_tr_gr[0,1]
+        PolarMat_Alpha_tr_gr[0,:] = PolarMat_Alpha_tr_gr[0,:]*( EA_trans + VAB_0100 )/eps._value
+        PolarMat_Alpha_tr_gr[1,:] = PolarMat_Alpha_tr_gr[1,:]*( EB_trans + VAB_0001 )/eps._value
+        res["E_pol2_A(E)_(trans,grnd)"] = PolarMat_Alpha_tr_gr
+        
+        # calculate contribution from 0-1 ground and 0-1 excited interaction with alpha_static polarizability
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = np.zeros(len(index2),dtype='f8')
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        E_AB_st_pol1_tr_gr = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        E_AB_st_pol1_tr_ex = self._get_interaction_energy(index2,charge=ex_charge2,debug=False)
+        E_A_st_pol1_tr_gr = self._get_interaction_energy(index1,charge=gr_charge1,debug=False)
+        E_A_st_pol1_tr_ex = self._get_interaction_energy(index1,charge=ex_charge1,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        E_A_st_pol1_env_tr = np.dot(FG_charge,Potential)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        self.charge[index1] = np.zeros(len(index1),dtype='f8')
+        self.charge[index2] = tr_charge2
+        self._calc_dipoles_All('Alpha_st',NN=1,eps=1,debug=False)
+        self.charge[index2] = np.zeros(len(index1),dtype='f8')
+        E_AB_st_pol1_gr_tr = self._get_interaction_energy(index1,charge=gr_charge1,debug=False)
+        E_AB_st_pol1_ex_tr = self._get_interaction_energy(index1,charge=ex_charge1,debug=False)
+        E_B_st_pol1_tr_gr = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        E_B_st_pol1_tr_ex = self._get_interaction_energy(index2,charge=gr_charge2,debug=False)
+        Potential = potential_dipole(self.dipole,R)
+        E_B_st_pol1_env_tr = np.dot(FG_charge,Potential)
+        self.dipole = np.zeros((self.Nat,3),dtype='f8')
+        
+        PolarMat_static_tr_gr_ex = np.zeros((2,2),dtype='f8')
+        PolarMat_static_tr_gr_ex[0,0] = (EA_trans + VAB_0100)/eps._value * (E_A_st_pol1_tr_ex + E_AB_st_pol1_tr_gr + E_A_st_pol1_env_tr)
+        PolarMat_static_tr_gr_ex[1,0] = (EB_trans + VAB_0001)/eps._value * (E_A_st_pol1_tr_ex + E_AB_st_pol1_tr_gr + E_A_st_pol1_env_tr)
+        PolarMat_static_tr_gr_ex[0,1] = (EA_trans + VAB_0100)/eps._value * (E_B_st_pol1_tr_ex + E_AB_st_pol1_gr_tr + E_B_st_pol1_env_tr)
+        PolarMat_static_tr_gr_ex[1,1] = (EB_trans + VAB_0001)/eps._value * (E_B_st_pol1_tr_ex + E_AB_st_pol1_gr_tr + E_B_st_pol1_env_tr)
+        PolarMat_static_tr_gr_ex[0,0] -= (EB_trans + VAB_1101)/eps._value * (E_AB_st_pol1_ex_tr + E_B_st_pol1_tr_gr + E_B_st_pol1_env_tr)
+        PolarMat_static_tr_gr_ex[0,1] -= (EA_trans + VAB_0111)/eps._value * (E_AB_st_pol1_ex_tr + E_B_st_pol1_tr_gr + E_B_st_pol1_env_tr)
+        PolarMat_static_tr_gr_ex[1,0] -= (EB_trans + VAB_1101)/eps._value * (E_AB_st_pol1_tr_ex + E_A_st_pol1_tr_gr + E_A_st_pol1_env_tr)
+        PolarMat_static_tr_gr_ex[1,1] -= (EA_trans + VAB_0111)/eps._value * (E_AB_st_pol1_tr_ex + E_A_st_pol1_tr_gr + E_A_st_pol1_env_tr)
+        res["E_pol1_A_static"] = PolarMat_static_tr_gr_ex
+        
+        
+        # return charges to original values    
+        FG_elstat.charge[index1] = charge_orig1
+        FG_elstat.charge[index2] = charge_orig2
+        self.charge[index1] = tr_charge1
+        self.charge[index2] = tr_charge2
+
+        # calculate new eigenstates and energies
+        HH=np.zeros((2,2),dtype='f8')
+        if Eng1<Eng2:
+            HH[0,0] = Eng1+dAVA
+            HH[1,1] = Eng2+dBVB
+        else:
+            HH[1,1] = Eng1+dAVA
+            HH[0,0] = Eng2+dBVB
+        HH[0,1] = E_TrEsp
+        HH[1,0] = HH[0,1]
+        Energy,Coeff=np.linalg.eigh(HH)
+        
+        d_esp=np.sqrt( E_TrEsp**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2 )          # sqrt( (<A|V|B>)**2 + ((Eng2-Eng1+dBVB-dAVA)/2)**2  )
+        
+        
+        # Calculate interaction energies
+        if approx==1.1:
+            # Calculate Total polarizability matrix
+            PolarMat = PolarMat_AlphaE + PolarMat_Alpha_E + PolarMat_Alpha_st 
+            PolarMat += PolarMat_Beta_scaled + ElstatMat_1 + 2*PolarMat_Alpha_tr_gr
+            PolarMat += 2*PolarMat_static_tr_gr_ex
+            
+            # Calculate interaction energies
+            C1 = Coeff.T[0]
+            E1 = Energy[0] + np.dot(C1, np.dot(PolarMat - d_esp*PolarMat_Beta, C1.T))
+            
+            C2 = Coeff.T[1]
+            E2 = Energy[1] + np.dot(C2, np.dot(PolarMat + d_esp*PolarMat_Beta, C2.T))
+            
+            J_inter = np.sqrt( (E2 - E1)**2 - (Eng2 - Eng1)**2 )/2*np.sign(E_TrEsp)
+            
+            # Calculate energy shifts for every defect
+            Eshift1 = dAVA + PolarMat_AlphaE[0,0] - PolarMat_Alpha_E[1,1]
+            Eshift1 -= (self.VinterFG - dAVA)*PolarMat_Beta[0,0]
+            
+            Eshift2 = dBVB + PolarMat_AlphaE[1,1] - PolarMat_Alpha_E[0,0]
+            Eshift2 -= (self.VinterFG - dBVB)*PolarMat_Beta[1,1]
+            
+            # Calculate transition dipoles for every defect
+            TrDip1 = np.dot(self.charge[index1],self.coor[index1,:]) # vacuum transition dipole for single defect
+            TrDip1 = TrDip1*(1 + PolarMat_Beta[0,0]/4) + dip_AlphaE1 + dip_Alpha_E1
+            TrDip1 -= (self.VinterFG - dAVA)*dip_Beta1
+            
+            TrDip2 = np.dot(self.charge[index2],self.coor[index2,:]) # vacuum transition dipole for single defect
+            TrDip2 = TrDip2*(1 + PolarMat_Beta[1,1]/4) + dip_AlphaE2 + dip_Alpha_E2
+            TrDip2 -= (self.VinterFG - dBVB)*dip_Beta2
+            
+        
+            # Change to energy class
+            with energy_units('AU'):
+                J_inter = EnergyClass(J_inter)
+                Eshift1 = EnergyClass(Eshift1)
+                Eshift2 = EnergyClass(Eshift2)
+                res["E_pol2_A(E)"] = EnergyClass(res["E_pol2_A(E)"])
+                res["E_pol2_A(-E)"] = EnergyClass(res["E_pol2_A(-E)"])
+                res["E_pol2_A_static"] = EnergyClass(res["E_pol2_A_static"])
+                res["E_pol2_B(E,E)_scaled"] = EnergyClass(res["E_pol2_B(E,E)_scaled"])
+                res["E_pol2_A(E)_(trans,grnd)"] = EnergyClass(res["E_pol2_A(E)_(trans,grnd)"])
+                res["E_pol1_A_static"] = EnergyClass(res["E_pol1_A_static"])
+                res["E_elstat_1"] = EnergyClass(res["E_elstat_1"])
+                res["E_pol2_B(E,E)"] = EnergyClass(res["E_pol2_B(E,E)"])
+
+#            with energy_units("1/cm"):
+#                print("EA_pol1_s_ex_gr EA_pol1_env_s_ex_gr EAB_pol1_tr_gr EA_pol1_tr_gr")
+#                print("  {:9.4f}        {:9.4f}           {:9.4f}       {:9.4f}".format(
+#                                E_pol_static1_ex_gr.value,
+#                                E_pol_env_static1_ex_gr.value,
+#                                E_AB_pol1_tr_gr.value,
+#                                E_A_pol1_tr_gr.value))
+#                print("   VAB_0101       VAB_1101        VAB_0001       VAB_0000      VAB_1111     VAB_1100       E_grnd        E_exct        E_trans")
+#                print(VAB_0101.value, VAB_1101.value, VAB_0001.value, VAB_0000.value, VAB_1111.value, VAB_1100.value, E_grnd.value, E_exct.value, E_trans.value)
+
+
+#            res["E_pol2_A(E)"] = PolarMat_AlphaE
+#            res["E_pol2_A(-E)"] = PolarMat_Alpha_E
+#            res["E_pol2_A_static"] = PolarMat_Alpha_st
+#            res["E_pol2_B(E,E)"] = PolarMat_Beta
+#            res["E_pol2_B(E,E)_scaled"] = PolarMat_Beta_scaled
+#            res["E_pol2_A(E)_(trans,grnd)"] = PolarMat_Alpha_tr_gr
+#            res["E_pol1_A_static"] = PolarMat_static_tr_gr_ex
+#            res["E_elstat_1"] = ElstatMat_1
+    
+
+            return J_inter, Eshift1, Eshift2, TrDip1, TrDip2, AllDipAE1, AllDipA_E1, AllDipBE1, res
+        else:
+            raise IOError('Unsupported approximation')
+            
+    
+    def get_gmm(self,gr_charge, ex_charge, FG_elstat, struc, index, E01, 
+                int2cart, freq, red_mass, order=2, approx=1.1, CoarseGrain='C'):
+        """ Calculate coupling strength of the site energy to atomic coordinates. 
+        The reult is dimensionless coupling strength and resulting spectral
+        density is defined as \sum_xi {gmm_xi*gmm_xi*\delta(omega-omega_xi)}
+        
+        Parameters
+        ----------
+        gr_charge : numpy array of real (dimension Natoms_defect)
+            Ground state ESP charges for every atom from the defect
+        ex_charge : numpy array of real (dimension Natoms_defect)
+            Excited state ESP charges for every atom from the defect
+        FG_elstat : Electrostatics class
+            Electrostatic definition of the system (atomic charges, positions, 
+            ...). It is possible to use it for calculation of electrostatic
+            interaction energy between defect and environment
+        struc : Structure class
+            Structure definition of the molecule (needed for calculation of 
+            derivative of the hamiltonian with respect to atomic coordinates).
+        index : list of integer (dimension Natoms_defect)
+            Indexes of all atoms from the defect (starting from 0)
+        E01 : Energy class
+            Transition energy of isolated defect without environment (calculated
+            by quantum chemistry). Needed for calculation of derivative of
+            hamiltonian with respect to atomic coordinates
+        int2cart : numpy array of real (dimension 3*Nat x Nnormal_modes)
+            transformation matrix from internal to cartesian coordinates.
+            In columns there are normalized normal mode vectors in cartesian 
+            coordinates ordered as [dx1,dy1,dz1,dx2,dy2,dz2,dx3,...]. Norm
+            of the whole vector is 1.0 and it is dimensionless
+        freq : numpy array of real (dimension Nnormal_modes)
+            Wavenumbers of individual normal modes (frequency/speed of light 
+            - default output from gaussian and AMBER - in both called frequency)
+            in inverse centimeters 
+        red_mass : numpy array of real (dimension Nnormal_modes)
+            Reduced masses for every normal mode in AMU (atomic mass units)
+        order : integer (optional - init = 2)
+            Specify how many SCF steps shoudl be used in calculation of induced
+            dipoles - according to the used model it should be 2
+        CoarseGrain : string (optional - init = "C")
+            Possible values are: "plane","C","CF" and "all_atom". Define which 
+            level of coarse grained model should be used. If ``CoarseGrain="plane"``
+            then all atoms are projected on plane defined by nvec and C-F atoms
+            are treated as single atom - for this case polarizabilities defined
+            only in 2D by two numbers. If ``CoarseGrain="C"`` then carbon atoms
+            are center for atomic polarizability tensor and again C-F are treated
+            as a single atom. If ``CoarseGrain="CF"`` then center of C-F bonds 
+            are used as center for atomic polarizability tensor and again C-F 
+            are treated as a single atom. If ``CoarseGrain="all_atom"`` all atoms
+            are used as centers polarizability tensor.
+        approx : real (optional - init=1.1)
+            Specifies which approximation should be used.
+            
+            * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+              `Alpha(-E)`.
+            * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+            * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+              `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+        
+        """
+        
+        dR_Hmm,dR_env_Hmm = self.get_SingleDefect_derivation(gr_charge, ex_charge, FG_elstat, struc, index, E01, order=2, approx=1.1)
+        
+        # freq is actualy wavenumber (= frequency/speed_of_light).
+        # therefore angluar frequency omega in atomic units = 100/(2*Rydberg_inf) wavenumber in [cm-1]
+        omega_au = freq/conversion_facs_energy["1/cm"]
+        RedMass_au = red_mass/conversion_facs_mass
+        # in atomic units hbar = 1.0, m_e = 1.0, elementary_charge = 1.0, 1/(4*pi*eps_0) = 1.0, speed_of_light = 137 ( fine-structure constant)
+        
+        # pick only carbon atoms from eigenvectors of normal modes (assume that fluorine atoms doesn't influent the result) - in needed
+        if CoarseGrain in ["C","plane"] :
+            indxC = np.where(np.array(struc.at_type) == 'C')
+            index = np.zeros((len(indxC),3),dtype='i8')
+            for ii in range(3):
+                index[:,ii] = index*3+ii
+            index.reshape(3*len(indxC))
+            int2cart_loc = int2cart[index,:]
+        else:
+            int2cart_loc = int2cart.copy()
+            
+        g_mm = np.dot(int2cart_loc.T,dR_Hmm) + np.dot(int2cart.T,dR_env_Hmm)
+        g_mm = g_mm/(np.sqrt(omega_au*omega_au*omega_au))
+        g_mm = g_mm/(2*np.sqrt(RedMass_au))
+        
+        return g_mm
+        
 # =============================================================================
 # OLD AND NOT USED FUNCTION - WILL BE DELETED IN FUTURE
 # =============================================================================
@@ -2051,7 +3663,7 @@ class Dielectric:
 #            mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs)
 #        else:
 #            mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False)
-#        mol_Elstat,index,charge_grnd=ElStat_PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
+#        mol_Elstat,index,charge_grnd,charge_exct=ElStat_PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
 #
 #        # calculate <A|V|A>-<G|V|G>
 #        DE=mol_Elstat.get_EnergyShift()
@@ -2176,7 +3788,7 @@ class Dielectric:
 #            mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,**kwargs)
 #        else:
 #            mol_polar,index1,charge=prepare_molecule_1Def(filenames[ii],index_all[ii],AlphaE,Alpha_E,BetaE,VinterFG,verbose=False)
-#        mol_Elstat,index,charge_grnd=ElStat_PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
+#        mol_Elstat,index,charge_grnd,charge_exct=ElStat_PrepareMolecule_1Def(filenames[ii],index_all[ii],FG_charges,ChargeType=ChargeType,verbose=False)
 #
 #        # calculate <A|V|A>-<G|V|G>
 #        DE=mol_Elstat.get_EnergyShift()
@@ -2461,21 +4073,43 @@ def prepare_molecule_1Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=F
                               polar['AlphaE'],polar['Alpha_E'],polar['BetaE'],VinterFG)
     
     ZeroM=np.zeros((3,3),dtype='f8')
-    if kwargs:
+    
+    Polarizability = { 'CF': [AlphaE,Alpha_E,BetaE], 'CD': [AlphaE,Alpha_E,BetaE]}
+    
+    if "Alpha(E)" in kwargs.keys():
         AlphaE_def=kwargs['Alpha(E)']
         Alpha_E_def=kwargs['Alpha(-E)']
         BetaE_def=kwargs['Beta(E,E)']
-    if kwargs:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [AlphaE_def,Alpha_E_def,BetaE_def]}})
+        Polarizability['C'] = [AlphaE_def,Alpha_E_def,BetaE_def]
+    else :
+        Polarizability['C'] = [ZeroM,ZeroM,ZeroM]
+        
+    if "Fpolar" in kwargs.keys():
+        Polarizability['FC'] =  kwargs['Fpolar']
     else:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [ZeroM,ZeroM,ZeroM]}})
+        Polarizability['FC'] = [ZeroM,ZeroM,ZeroM]
+
+    mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': Polarizability})
+    
+    if "Alpha_static" in kwargs.keys():
+        mol_polar.polar['Alpha_st'] = np.zeros((len(PolCoor),3,3),dtype='f8')
+        
+        if CoarseGrain=="all_atom":
+            Alpha_static=kwargs["Alpha_static"]
+            AlphaF_static=kwargs["AlphaF_static"]
+        else:
+            Alpha_static=kwargs["Alpha_static"]
+            AlphaF_static=ZeroM
+        
+        for ii in range(len(PolType)):
+            if PolType[ii]=='CF':
+                mol_polar.polar['Alpha_st'][ii]=Alpha_static
+            elif PolType[ii]=='FC':
+                mol_polar.polar['Alpha_st'][ii]=AlphaF_static
+        
     return mol_polar,index1,charge,struc
 
-def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False, def2_charge=True,CoarseGrain="plane",**kwargs):
+def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False, def2_charge=True,CoarseGrain="plane",**kwargs):
     ''' Read all informations needed for Dielectric class and transform system
     with two same defects into this class. Useful for calculation of interaction 
     energies, transition site energy shifts and dipole changes.
@@ -2523,9 +4157,6 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
         ground state C-F corse grained atom of fluorographene with all others
         fluorographene corse grained atoms in ground state. Units are ATOMIC 
         UNITS (Hartree)
-    nvec : numpy.array (dimension 3) (optional - init=np.array([0.0,0.0,1.0],dtype='f8'))
-        Normal vector to the fluorographene plane - needed for projection
-        of fluorographene atoms into a 2D plane
     def2_charge : logical (init = True)
         Specifies if transition charges should be placed also to the second 
         defect
@@ -2610,7 +4241,7 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
         raise IOError('There are repeating elements in index file')
 
     # Assign pol types
-    PolCoor,Polcharge,PolType = _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,CoarseGrain,nvec=nvec)
+    PolCoor,Polcharge,PolType = _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,CoarseGrain)
 #    PolType=[]
 #    Polcharge=[]
 #    PolCoor=[]
@@ -2643,7 +4274,10 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
     # center projected molecule on plane
     if verbose:
         print('        Centering molecule...')
-    PolCoor=CenterMolecule(PolCoor,indx_center1,indx_x1,indx_y1)
+    PolCoor,Phi,Psi,Chi,center=CenterMolecule(PolCoor,indx_center1,[indx_center1,indx_x1,indx_center2,indx_x2],[indx_center1,indx_y1,indx_center2,indx_y2],print_angles=True)
+    # Do the same transformation also with the structure
+    struc.move(-center[0],-center[1],-center[2])
+    struc.rotate(Phi,Psi,Chi)
     
     polar={}
     polar['AlphaE']=np.zeros((len(PolCoor),3,3),dtype='f8')
@@ -2654,22 +4288,39 @@ def prepare_molecule_2Def(filenames,indx,AlphaE,Alpha_E,BetaE,VinterFG,nvec=np.a
                          polar['AlphaE'],polar['Alpha_E'],polar['BetaE'],VinterFG)
     
     ZeroM=np.zeros((3,3),dtype='f8')
-    if kwargs:
+    
+    Polarizability = { 'CF': [AlphaE,Alpha_E,BetaE], 'CD': [AlphaE,Alpha_E,BetaE]}
+    
+    if "Alpha(E)" in kwargs.keys():
         AlphaE_def=kwargs['Alpha(E)']
         Alpha_E_def=kwargs['Alpha(-E)']
         BetaE_def=kwargs['Beta(E,E)']
-    if kwargs:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [AlphaE_def,Alpha_E_def,BetaE_def]}})
+        Polarizability['C'] = [AlphaE_def,Alpha_E_def,BetaE_def]
+    else :
+        Polarizability['C'] = [ZeroM,ZeroM,ZeroM]
+        
+    if "Fpolar" in kwargs.keys():
+        Polarizability['FC'] =  kwargs['Fpolar']
     else:
-        mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': {'CF': [AlphaE,Alpha_E,BetaE],
-                                                                    'CD': [AlphaE,Alpha_E,BetaE],
-                                                                    'C': [ZeroM,ZeroM,ZeroM]}})
-                                        
+        Polarizability['FC'] = [ZeroM,ZeroM,ZeroM]
+
+    mol_polar.polar=mol_polar.assign_polar(PolType,**{'PolValues': Polarizability})
+    
+    if "Alpha_static" in kwargs.keys():
+        mol_polar.polar['Alpha_st'] = np.zeros((len(PolCoor),3,3),dtype='f8')
+        
+        if CoarseGrain=="all_atom":
+            Alpha_static=ZeroM
+        else:
+            Alpha_static=kwargs["Alpha_static"]
+        
+        for ii in range(len(PolType)):
+            if PolType[ii]=='CF':
+                mol_polar.polar['Alpha_st'][ii]=Alpha_static
+                          
     return mol_polar,index1,index2,charge1,charge2,struc
 
-def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0.0,1.0],dtype='f8'),verbose=False):
+def _prepare_polar_structure_1def(struc,index1,charge1,Type,verbose=False):
     """
     Type = "plane","C","CF","all_atom"
     
@@ -2703,8 +4354,26 @@ def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0
         
         if Type == "plane":
             # project molecule whole system to plane defined by defect
-            center=np.array([0.0,0.0,0.0],dtype='f8')
-            PolCoor=project_on_plane(PolCoor,nvec,center)
+            nvec_test,origin_test = fit_plane(PolCoor)
+            PolCoor=project_on_plane(PolCoor,nvec_test,origin_test)
+            #center=np.array([0.0,0.0,0.0],dtype='f8')
+            #PolCoor=project_on_plane(PolCoor,nvec,center)
+    
+    elif Type == "all_atom":
+        PolCoor = struc.coor._value.copy()
+        for ii in range(struc.nat):
+            if struc.at_type[ii]=='C' and (ii in index1):
+                Polcharge.append(charge1[np.where(index1==ii)[0][0]])
+                PolType.append('C')
+            elif struc.at_type[ii]=='C':
+                PolType.append('CF')
+                Polcharge.append(0.0)
+            elif struc.at_type[ii]=='F':
+                PolType.append('FC')
+                Polcharge.append(0.0)
+        PolType=np.array(PolType)
+        Polcharge=np.array(Polcharge,dtype='f8')
+        PolCoor=np.array(PolCoor,dtype='f8')
     
     elif Type == "CF":
         connectivity = []
@@ -2748,7 +4417,7 @@ def _prepare_polar_structure_1def(struc,index1,charge1,Type,nvec=np.array([0.0,0
     
     return PolCoor,Polcharge,PolType
 
-def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,nvec=None,verbose=False):
+def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,verbose=False):
     """
     Type = "plane","C","CF","all_atom"
     
@@ -2784,8 +4453,29 @@ def _prepare_polar_structure_2def(struc,index1,charge1,index2,charge2,Type,nvec=
     
         if Type == "plane":
             # project molecule whole system to plane defined by defect
-            center=np.array([0.0,0.0,0.0],dtype='f8')
-            PolCoor=project_on_plane(PolCoor,nvec,center)
+            nvec_test,origin_test = fit_plane(PolCoor)
+            PolCoor=project_on_plane(PolCoor,nvec_test,origin_test)
+            #center=np.array([0.0,0.0,0.0],dtype='f8')
+            #PolCoor=project_on_plane(PolCoor,nvec,center)
+            
+    elif Type == "all_atom":
+        PolCoor = struc.coor._value.copy()
+        for ii in range(struc.nat):
+            if struc.at_type[ii]=='C' and (ii in index1):
+                Polcharge.append(charge1[np.where(index1==ii)[0][0]])
+                PolType.append('C')
+            elif struc.at_type[ii]=='C' and (ii in index2):
+                Polcharge.append(charge2[np.where(index2==ii)[0][0]])
+                PolType.append('C')
+            elif struc.at_type[ii]=='C':
+                PolType.append('CF')
+                Polcharge.append(0.0)
+            elif struc.at_type[ii]=='F':
+                PolType.append('FC')
+                Polcharge.append(0.0)
+        PolType=np.array(PolType)
+        Polcharge=np.array(Polcharge,dtype='f8')
+        #print(len(PolCoor),len(PolType))
             
 # TODO: TEST this assignment of polarizability centers
     elif Type == "CF":
@@ -2934,7 +4624,7 @@ def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,Vin
 
     # calculate dAVA = <A|V|A>-<G|V|G>
     AditInfo={'Structure': struc,'index1': index1}
-    mol_Elstat,index,charge_grnd=ElStat_PrepareMolecule_1Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
+    mol_Elstat,index,charge_grnd,charge_exct=ElStat_PrepareMolecule_1Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
     dAVA=mol_Elstat.get_EnergyShift()
 
     # calculate transition energy shifts and transition dipole change      
@@ -2950,7 +4640,7 @@ def Calc_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,Vin
 
 #TODO: Get rid of ShortName
 #TODO: Input vacuum transition energies
-def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
     ''' Calculate interaction energies between defects embeded in polarizable atom
     environment for all systems given in filenames. Possibility of calculate 
     transition energy shifts and transition dipoles.
@@ -3079,16 +4769,16 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
         print('Calculation of interaction energy for:',ShortName)
     
     # read and prepare molecule
-    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,nvec=nvec_all,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
+    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
     
     # # calculate dAVA = <A|V|A>-<G|V|G> and dBVB = <B|V|B>-<G|V|G>
     AditInfo={'Structure': struc,'index1': index1,'index2':index2}
-    mol_Elstat,indx1,indx2,charge1_grnd,charge2_grnd=ElStat_PrepareMolecule_2Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
+    mol_Elstat,indx1,indx2,charge1_grnd,charge2_grnd,charge1_exct,charge2_exct=ElStat_PrepareMolecule_2Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
     dAVA=mol_Elstat.get_EnergyShift(index=index2, charge=charge2_grnd)
     dBVB=mol_Elstat.get_EnergyShift(index=index1, charge=charge1_grnd)
 
     # calculate interaction energy and transition energy shifts      
-    Einter,Eshift1,Eshift2,TrDip1,TrDip2=mol_polar.get_HeterodimerProperties(index1,index2,0.0,0.0,dAVA=dAVA,dBVB=dBVB,order=order,approx=approx)
+    Einter,Eshift1,Eshift2,TrDip1,TrDip2,dipAE,dipA_E,dipBE=mol_polar.get_HeterodimerProperties(index1,index2,0.0,0.0,dAVA=dAVA,dBVB=dBVB,order=order,approx=approx)
     
     if verbose:
         with energy_units("1/cm"):
@@ -3097,9 +4787,811 @@ def Calc_Heterodimer_FGprop(filenames,ShortName,index_all,nvec_all,AlphaE,Alpha_
             print("dipole:",np.linalg.norm(TrDip1),np.linalg.norm(TrDip2))
             print("dAVA:",dAVA*conversion_facs_energy["1/cm"],"dBVB:",dBVB*conversion_facs_energy["1/cm"])
     
+    if MathOut:
+        if not os.path.exists("Pictures"):
+            os.makedirs("Pictures")
+        Bonds = GuessBonds(mol_polar.coor)
+        
+        if CoarseGrain in ["plane","C","CF"]:
+            at_type = ['C']*mol_polar.Nat
+        elif CoarseGrain == "all_atom":
+            at_type = struc.at_type.copy()
+        
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_AlphaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipAE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_Alpha_E.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipA_E,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_BetaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipBE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+
+        
 
     return Einter, Eshift1, Eshift2, TrDip1, TrDip2
+
+def TEST_Calc_Heterodimer_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=80,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+    ''' Calculate interaction energies between defects embeded in polarizable atom
+    environment for all systems given in filenames. Possibility of calculate 
+    transition energy shifts and transition dipoles.
+    
+    Parameters
+    ----------
+    filenames : dictionary
+        Dictionary with information about all needed files which contains 
+        nessesary information for transformig the system into Dielectric class
+        and electrostatic calculations. Keys:
+            
+        * ``'2def_structure'``: xyz file with FG system with two defects 
+          geometry and atom types
+        * ``'charge1_structure'``: xyz file with defect-like molecule geometry
+          for which transition charges were calculated corresponding to first
+          defect
+        * ``'charge1'``: file with transition charges for the first defect 
+          (from TrEsp charges fitting)
+        * ``'charge1_grnd'``: file with ground state charges for the first defect 
+          (from TrEsp charges fitting)
+        * ``'charge1_exct'``: file with excited state charges for the first defect 
+          (from TrEsp charges fitting)
+        * ``'charge2_structure'``: xyz file with defect-like molecule geometry
+          for which transition charges were calculated corresponding to second
+          defect
+        * ``'charge2'``: file with transition charges for the second defect 
+          (from TrEsp charges fitting)
+        * ``'charge2_grnd'``: file with ground state charges for the second defect 
+          (from TrEsp charges fitting)
+        * ``'charge2_exct'``: file with excited state charges for the second defect 
+          (from TrEsp charges fitting)
+          
+    ShortName : string
+        Short description of the system 
+    index_all : list of integers (dimension 6)
+        There are specified indexes neded for asignment of defect 
+        atoms. First three indexes correspond to center and two main axes of 
+        reference structure (structure which was used for charges calculation)
+        and the next three indexes are corresponding atoms of the first defects 
+        on fluorographene system and the last three indexes are corresponding 
+        atoms of the second defect.
+    AlphaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    Alpha_E : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(-E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    BetaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Beta(E,E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    VinterFG : real
+        Difference in electrostatic interaction energy between interaction of
+        excited C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state and interaction of
+        ground state C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state. Units are ATOMIC 
+        UNITS (Hartree)
+    FG_charges : list of real (dimension 2)
+        [charge on inner fluorographene atom, charge on borded fluorographe carbon]
+    ChargeType : string
+        Specifies which charges should be used for electrostatic calculations
+        (ground and excited state charges) for defect atoms. Allowed types are:
+        ``'qchem'``, ``'qchem_all'``, ``'AMBER'`` and ``'gaussian'``. 
         
+        * ``'qchem'`` - charges calculated by fiting Q-Chem ESP on carbon
+          atoms. 
+        * ``'qchem_all'`` - charges calculated by fiting Q-Chem ESP on all
+          atoms, only carbon charges are used and same charge is added to all 
+          carbon atoms in order to have neutral molecule. 
+        * ``'AMBER'`` - not yet fully implemented. 
+        * ``'gaussian'`` - not yet fully implemented.
+        
+    order : integer (optional - init=80)
+        Specify how many SCF steps shoudl be used in calculation  of induced
+        dipoles - according to the used model it should be 2
+    CoarseGrain : string (optional init = "plane")
+        Possible values are: "plane","C","CF". Define which level of coarse 
+        grained model should be used. If ``CoarseGrain="plane"`` then all atoms
+        are projected on plane defined by nvec and C-F atoms re treated as single
+        atom - for this case polarizabilities defined only in 2D by two numbers.
+        If ``CoarseGrain="C"`` then carbon atoms are center for atomic
+        polarizability tensor and again C-F are treated as a single atom. 
+        If ``CoarseGrain="CF"`` then center of C-F bonds are used as center for
+        atomic polarizability tensor and again C-F are treated as a single atom.
+    verbose : logical (optional - init=False)
+        If `True` aditional information about whole proces will be printed
+    approx : real (optional - init=1.1)
+        Specifies which approximation should be used.
+            
+        **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+        `Alpha(-E)`.
+        
+        **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+
+        **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+        `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+
+    Returns
+    --------
+    Einter : Energy class
+        Interaction energy with effects of environment included. Units are 
+        energy managed
+    Eshift1 : Energy class
+        Transition energy shift for the first defect due to fluorographene
+        environment calculated from heterodymer structure. Units are energy
+        managed
+    Eshift2 : Energy class
+        Transition energy shift for the second defect due to fluorographene
+        environment calculated from heterodymer structure. Units are energy
+        managed
+    TrDip1 : numpy array of real (dimension 3)
+        Total transition dipole for the first defect with environment effects 
+        included calculated from heterodimer structure (in ATOMIC UNITS)
+    TrDip2 : numpy array of real (dimension 3)
+        Total transition dipole for the first defect with environment effects 
+        included calculated from heterodimer structure (in ATOMIC UNITS)
+
+    Notes
+    ----------
+    No far working only with two symmetric defects - for heterodimer need to
+    input vacuum transition energy for every defect.    
+    
+    '''    
+    
+    if verbose:
+        print('Calculation of interaction energy for:',ShortName)
+    
+    # read and prepare molecule
+    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
+    
+    if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
+        raise Warning("Transition charges are not the same - after creation.")
+    
+    # # calculate dAVA = <A|V|A>-<G|V|G> and dBVB = <B|V|B>-<G|V|G>
+    AditInfo={'Structure': struc,'index1': index1,'index2':index2}
+    mol_Elstat,indx1,indx2,charge1_grnd,charge2_grnd,charge1_exct,charge2_exct=ElStat_PrepareMolecule_2Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)       
+    dAVA=mol_Elstat.get_EnergyShift(index=index2, charge=charge2_grnd)        
+    dBVB=mol_Elstat.get_EnergyShift(index=index1, charge=charge1_grnd)
+#    dAVA=mol_Elstat.get_EnergyShift(index=index2)        
+#    dBVB=mol_Elstat.get_EnergyShift(index=index1)
+    
+    if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
+        raise Warning("Transition charges are not the same - after elstat.")
+
+    # calculate interaction energy and transition energy shifts - so far for homodimer   
+    Einter,Eshift1,Eshift2,TrDip1,TrDip2,dipAE,dipA_E,dipBE,res=mol_polar._TEST_HeterodimerProperties(charge1_grnd,charge1_exct,charge2_grnd,charge2_exct,mol_Elstat,struc,index1,index2,0.0,0.0,dAVA=dAVA,dBVB=dBVB,order=order,approx=approx)
+    #get_HeterodimerProperties_new(self, gr_charge1, ex_charge1, gr_charge2, ex_charge2, FG_elstat, struc, index1, index2, Eng1, Eng2, eps, dAVA=0.0, dBVB=0.0, order=2, approx=1.1)
+    
+#            res["E_pol2_A(E)"]
+#            res["E_pol2_A(-E)"]
+#            res["E_pol2_B(E,E)"]
+#            res["E_pol1_B(E,E)_(A_exct,B_grnd)"]
+#            res["E_pol1_B(E,E)_(A_grnd,B_exct)"]
+#            res["E_pol1-env_B(E,E)_grnd"]
+#            res["E_pol1-env_B(E,E)_exct"]
+#            res["E_pol2_st_(A_exct,B_grnd)"]
+#            res["E_pol2_st_(A_grnd,B_exct)"]
+#            res["E_pol2-env_st_grnd"]
+#            res["E_pol2-env_st_exct"]
+#            res["E_pol1_B(E,E)_(tr_gr,ex)"]
+    
+    import os
+    if not os.path.isfile("Temp.dat"):
+        text = "                            pol2_A(E)      |       pol2_A(-E)      |  pol2_st_(A_ex,B_gr)  |  pol2_st_(A_gr,B_ex)  |   E_pol2-env_st_grnd  |   E_pol2-env_st_exct  |       pol1_BEE        |  pol1_BEE_(A_ex,B_gr) |  pol1_BEE_(A_gr,B_ex) |   pol1-env_BEE_grnd   |   pol1-env_BEE_exct   |  pol1_BEE_(tr_gr,ex)  |"
+        os.system("".join(['echo "',text,'" >> Temp.dat']))
+        text = "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|"
+        os.system("".join(['echo "',text,'" >> Temp.dat']))
+    #                              pol2_A(E)      |       pol2_A(-E)      |  pol2_st_(A_ex,B_gr)  |  pol2_st_(A_gr,B_ex)  |   E_pol2-env_st_grnd  |   E_pol2-env_st_exct  |       pol1_BEE        |  pol1_BEE_(A_ex,B_gr) |  pol1_BEE_(A_gr,B_ex) |   pol1-env_BEE_grnd   |"
+    ii = 0
+    text="{:21} {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} |".format(
+            ShortName,res["E_pol2_A(E)"][ii,0],res["E_pol2_A(E)"][ii,1],res["E_pol2_A(-E)"][ii,0],res["E_pol2_A(-E)"][ii,1],
+            res["E_pol2_st_(A_exct,B_grnd)"][ii,0],res["E_pol2_st_(A_exct,B_grnd)"][ii,1],res["E_pol2_st_(A_grnd,B_exct)"][ii,0],
+            res["E_pol2_st_(A_grnd,B_exct)"][ii,1],res["E_pol2-env_st_grnd"][ii,0],res["E_pol2-env_st_grnd"][ii,1],
+            res["E_pol2-env_st_exct"][ii,0],res["E_pol2-env_st_exct"][ii,1],res["E_pol2_B(E,E)"][ii,0],res["E_pol2_B(E,E)"][ii,1],
+            res["E_pol1_B(E,E)_(A_exct,B_grnd)"][ii,0],res["E_pol1_B(E,E)_(A_exct,B_grnd)"][ii,1],res["E_pol1_B(E,E)_(A_grnd,B_exct)"][ii,0],
+            res["E_pol1_B(E,E)_(A_grnd,B_exct)"][ii,1],res["E_pol1-env_B(E,E)_grnd"][ii,0],res["E_pol1-env_B(E,E)_grnd"][ii,1],
+            res["E_pol1-env_B(E,E)_exct"][ii,0],res["E_pol1-env_B(E,E)_exct"][ii,1],res["E_pol1_B(E,E)_(tr_gr,ex)"][ii,0],res["E_pol1_B(E,E)_(tr_gr,ex)"][ii,1])
+    os.system("".join(['echo "',text,'" >> Temp.dat']))
+    ii = 1
+    text="{:21} {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} |".format(
+            " ",res["E_pol2_A(E)"][ii,0],res["E_pol2_A(E)"][ii,1],res["E_pol2_A(-E)"][ii,0],res["E_pol2_A(-E)"][ii,1],
+            res["E_pol2_st_(A_exct,B_grnd)"][ii,0],res["E_pol2_st_(A_exct,B_grnd)"][ii,1],res["E_pol2_st_(A_grnd,B_exct)"][ii,0],
+            res["E_pol2_st_(A_grnd,B_exct)"][ii,1],res["E_pol2-env_st_grnd"][ii,0],res["E_pol2-env_st_grnd"][ii,1],
+            res["E_pol2-env_st_exct"][ii,0],res["E_pol2-env_st_exct"][ii,1],res["E_pol2_B(E,E)"][ii,0],res["E_pol2_B(E,E)"][ii,1],
+            res["E_pol1_B(E,E)_(A_exct,B_grnd)"][ii,0],res["E_pol1_B(E,E)_(A_exct,B_grnd)"][ii,1],res["E_pol1_B(E,E)_(A_grnd,B_exct)"][ii,0],
+            res["E_pol1_B(E,E)_(A_grnd,B_exct)"][ii,1],res["E_pol1-env_B(E,E)_grnd"][ii,0],res["E_pol1-env_B(E,E)_grnd"][ii,1],
+            res["E_pol1-env_B(E,E)_exct"][ii,0],res["E_pol1-env_B(E,E)_exct"][ii,1],res["E_pol1_B(E,E)_(tr_gr,ex)"][ii,0],res["E_pol1_B(E,E)_(tr_gr,ex)"][ii,1])
+    os.system("".join(['echo "',text,'" >> Temp.dat']))
+    text = "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|"
+    os.system("".join(['echo "',text,' " >> Temp.dat']))
+    
+#    if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
+#        raise Warning("Transition charges are not the same - after polar.")
+    
+# TODO: For testing output structure and polarization structure - I'm getting different values for first and second defect
+#    struc.output_to_xyz("".join([ShortName,"_structure.xyz"]))
+#    from QChemTool.QuantumChem.output import OutputToXYZ
+#    from QChemTool.General.units import conversion_facs_position
+#    OutputToXYZ(mol_polar.coor*conversion_facs_position["Angstrom"],["C"]*len(mol_polar.coor),"".join([ShortName,"_pol.xyz"]))
+    
+    if verbose:
+        with energy_units("1/cm"):
+            print('        Total interaction energy:',Einter.value)
+            print(ShortName,abs(Einter.value),Eshift1.value,Eshift2.value) 
+            print("dipole:",np.linalg.norm(TrDip1),np.linalg.norm(TrDip2))
+            print("dAVA:",dAVA*conversion_facs_energy["1/cm"],"dBVB:",dBVB*conversion_facs_energy["1/cm"])
+    
+    if MathOut:
+        if not os.path.exists("Pictures"):
+            os.makedirs("Pictures")
+        Bonds = GuessBonds(mol_polar.coor)
+        
+        if CoarseGrain in ["plane","C","CF"]:
+            at_type = ['C']*mol_polar.Nat
+        elif CoarseGrain == "all_atom":
+            at_type = struc.at_type.copy()
+            
+#        if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
+#            raise Warning("Transition charges are not the same - before output.")
+        
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_AlphaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipAE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_Alpha_E.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipA_E,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_BetaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipBE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+
+        
+
+    return Einter, Eshift1, Eshift2, TrDip1, TrDip2
+
+def Calc_Heterodimer_FGprop_new(filenames,ShortName,E1,E2,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=2,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+    ''' Calculate interaction energies between defects embeded in polarizable atom
+    environment for all systems given in filenames. Possibility of calculate 
+    transition energy shifts and transition dipoles.
+    
+    Parameters
+    ----------
+    filenames : dictionary
+        Dictionary with information about all needed files which contains 
+        nessesary information for transformig the system into Dielectric class
+        and electrostatic calculations. Keys:
+            
+        * ``'2def_structure'``: xyz file with FG system with two defects 
+          geometry and atom types
+        * ``'charge1_structure'``: xyz file with defect-like molecule geometry
+          for which transition charges were calculated corresponding to first
+          defect
+        * ``'charge1'``: file with transition charges for the first defect 
+          (from TrEsp charges fitting)
+        * ``'charge1_grnd'``: file with ground state charges for the first defect 
+          (from TrEsp charges fitting)
+        * ``'charge1_exct'``: file with excited state charges for the first defect 
+          (from TrEsp charges fitting)
+        * ``'charge2_structure'``: xyz file with defect-like molecule geometry
+          for which transition charges were calculated corresponding to second
+          defect
+        * ``'charge2'``: file with transition charges for the second defect 
+          (from TrEsp charges fitting)
+        * ``'charge2_grnd'``: file with ground state charges for the second defect 
+          (from TrEsp charges fitting)
+        * ``'charge2_exct'``: file with excited state charges for the second defect 
+          (from TrEsp charges fitting)
+          
+    ShortName : string
+        Short description of the system 
+    index_all : list of integers (dimension 6)
+        There are specified indexes neded for asignment of defect 
+        atoms. First three indexes correspond to center and two main axes of 
+        reference structure (structure which was used for charges calculation)
+        and the next three indexes are corresponding atoms of the first defects 
+        on fluorographene system and the last three indexes are corresponding 
+        atoms of the second defect.
+    AlphaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    Alpha_E : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(-E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    BetaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Beta(E,E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    VinterFG : real
+        Difference in electrostatic interaction energy between interaction of
+        excited C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state and interaction of
+        ground state C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state. Units are ATOMIC 
+        UNITS (Hartree)
+    FG_charges : list of real (dimension 2)
+        [charge on inner fluorographene atom, charge on borded fluorographe carbon]
+    ChargeType : string
+        Specifies which charges should be used for electrostatic calculations
+        (ground and excited state charges) for defect atoms. Allowed types are:
+        ``'qchem'``, ``'qchem_all'``, ``'AMBER'`` and ``'gaussian'``. 
+        
+        * ``'qchem'`` - charges calculated by fiting Q-Chem ESP on carbon
+          atoms. 
+        * ``'qchem_all'`` - charges calculated by fiting Q-Chem ESP on all
+          atoms, only carbon charges are used and same charge is added to all 
+          carbon atoms in order to have neutral molecule. 
+        * ``'AMBER'`` - not yet fully implemented. 
+        * ``'gaussian'`` - not yet fully implemented.
+        
+    order : integer (optional - init=80)
+        Specify how many SCF steps shoudl be used in calculation  of induced
+        dipoles - according to the used model it should be 2
+    CoarseGrain : string (optional init = "plane")
+        Possible values are: "plane","C","CF". Define which level of coarse 
+        grained model should be used. If ``CoarseGrain="plane"`` then all atoms
+        are projected on plane defined by nvec and C-F atoms re treated as single
+        atom - for this case polarizabilities defined only in 2D by two numbers.
+        If ``CoarseGrain="C"`` then carbon atoms are center for atomic
+        polarizability tensor and again C-F are treated as a single atom. 
+        If ``CoarseGrain="CF"`` then center of C-F bonds are used as center for
+        atomic polarizability tensor and again C-F are treated as a single atom.
+    verbose : logical (optional - init=False)
+        If `True` aditional information about whole proces will be printed
+    approx : real (optional - init=1.1)
+        Specifies which approximation should be used.
+            
+        **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+        `Alpha(-E)`.
+        
+        **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+
+        **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+        `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+
+    Returns
+    --------
+    Einter : Energy class
+        Interaction energy with effects of environment included. Units are 
+        energy managed
+    Eshift1 : Energy class
+        Transition energy shift for the first defect due to fluorographene
+        environment calculated from heterodymer structure. Units are energy
+        managed
+    Eshift2 : Energy class
+        Transition energy shift for the second defect due to fluorographene
+        environment calculated from heterodymer structure. Units are energy
+        managed
+    TrDip1 : numpy array of real (dimension 3)
+        Total transition dipole for the first defect with environment effects 
+        included calculated from heterodimer structure (in ATOMIC UNITS)
+    TrDip2 : numpy array of real (dimension 3)
+        Total transition dipole for the first defect with environment effects 
+        included calculated from heterodimer structure (in ATOMIC UNITS)
+
+    Notes
+    ----------
+    No far working only with two symmetric defects - for heterodimer need to
+    input vacuum transition energy for every defect.    
+    
+    '''    
+    
+    if verbose:
+        print('Calculation of interaction energy for:',ShortName)
+    
+    # read and prepare molecule
+    mol_polar,index1,index2,charge1,charge2,struc=prepare_molecule_2Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,def2_charge=True,CoarseGrain=CoarseGrain,**kwargs)
+    
+    if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
+        raise Warning("Transition charges are not the same - after creation.")
+    
+    # # calculate dAVA = <A|V|A>-<G|V|G> and dBVB = <B|V|B>-<G|V|G>
+    AditInfo={'Structure': struc,'index1': index1,'index2':index2}
+    mol_Elstat,indx1,indx2,charge1_grnd,charge2_grnd,charge1_exct,charge2_exct=ElStat_PrepareMolecule_2Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)       
+    dAVA=mol_Elstat.get_EnergyShift(index=index2, charge=charge2_grnd)        
+    dBVB=mol_Elstat.get_EnergyShift(index=index1, charge=charge1_grnd)
+#    dAVA=mol_Elstat.get_EnergyShift(index=index2)        
+#    dBVB=mol_Elstat.get_EnergyShift(index=index1)
+    
+    if (mol_polar.charge[index1] != mol_polar.charge[index2]).any():
+        raise Warning("Transition charges are not the same - after elstat.")
+
+    eps = EnergyClass( (E1.value+E2.value)/2 )
+    # calculate interaction energy and transition energy shifts - so far for homodimer   
+    Einter,Eshift1,Eshift2,TrDip1,TrDip2,dipAE,dipA_E,dipBE,res=mol_polar.get_HeterodimerProperties_new(charge1_grnd,charge1_exct,charge2_grnd,charge2_exct,mol_Elstat,struc,index1,index2,0.0,0.0,eps,dAVA=dAVA,dBVB=dBVB,order=order,approx=approx)
+    
+    if verbose:
+        with energy_units("1/cm"):
+            print('        Total interaction energy:',Einter.value)
+            print(ShortName,abs(Einter.value),Eshift1.value,Eshift2.value) 
+            print("dipole:",np.linalg.norm(TrDip1),np.linalg.norm(TrDip2))
+            print("dAVA:",dAVA*conversion_facs_energy["1/cm"],"dBVB:",dBVB*conversion_facs_energy["1/cm"])
+    
+    if MathOut:
+        if not os.path.exists("Pictures"):
+            os.makedirs("Pictures")
+        Bonds = GuessBonds(mol_polar.coor)
+        
+        if CoarseGrain in ["plane","C","CF"]:
+            at_type = ['C']*mol_polar.Nat
+        elif CoarseGrain == "all_atom":
+            at_type = struc.at_type.copy()
+        
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_AlphaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipAE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_Alpha_E.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipA_E,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+        mat_filename = "".join(['Pictures/Polar_',ShortName,'_BetaE.nb'])
+        params = {'TrPointCharge': mol_polar.charge,'AtDipole': dipBE,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_polar.coor,Bonds,at_type,scaleDipole=50.0,**params)
+
+
+#            res["E_pol2_A(E)"] = PolarMat_AlphaE
+#            res["E_pol2_A(-E)"] = PolarMat_Alpha_E
+#            res["E_pol2_A_static"] = PolarMat_Alpha_st
+#            res["E_pol2_B(E,E)"] = PolarMat_Beta
+#            res["E_pol2_B(E,E)_scaled"] = PolarMat_Beta_scaled
+#            res["E_pol2_A(E)_(trans,grnd)"] = PolarMat_Alpha_tr_gr
+#            res["E_pol1_A_static"] = PolarMat_static_tr_gr_ex
+#            res["E_elstat_1"] = ElstatMat_1
+    
+    if verbose:
+        if not os.path.isfile("Temp.dat"):
+            text = "                             pol2_A(E)      |       pol2_A(-E)      |        pol2_st        |    pol2_BEE_scaled    |   E_pol1-A(E)_tr_gr   |        E_pol1_st      |         pol1_BEE        |       sum_elstat      |"
+            os.system("".join(['echo "',text,'" >> Temp.dat']))
+            text = "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|"
+            os.system("".join(['echo "',text,'" >> Temp.dat']))
+       
+        with energy_units("1/cm"):
+            ii = 0
+            text="{:21} {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} |".format(
+                    ShortName,res["E_pol2_A(E)"].value[ii,0],res["E_pol2_A(E)"].value[ii,1],res["E_pol2_A(-E)"].value[ii,0],res["E_pol2_A(-E)"].value[ii,1],
+                    res["E_pol2_A_static"].value[ii,0],res["E_pol2_A_static"].value[ii,1],res["E_pol2_B(E,E)_scaled"].value[ii,0],
+                    res["E_pol2_B(E,E)_scaled"].value[ii,1],res["E_pol2_A(E)_(trans,grnd)"].value[ii,0],res["E_pol2_A(E)_(trans,grnd)"].value[ii,1],
+                    res["E_pol1_A_static"].value[ii,0],res["E_pol1_A_static"].value[ii,1],res["E_pol2_B(E,E)"].value[ii,0],res["E_pol2_B(E,E)"].value[ii,1],
+                    res["E_elstat_1"].value[ii,0],res["E_elstat_1"].value[ii,1])
+        
+            os.system("".join(['echo "',text,'" >> Temp.dat']))
+            ii = 1
+            text="{:21} {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.3f} {:10.3f} | {:10.6f} {:10.6f} | {:10.6f} {:10.6f} |".format(
+                    " ",res["E_pol2_A(E)"].value[ii,0],res["E_pol2_A(E)"].value[ii,1],res["E_pol2_A(-E)"].value[ii,0],res["E_pol2_A(-E)"].value[ii,1],
+                    res["E_pol2_A_static"].value[ii,0],res["E_pol2_A_static"].value[ii,1],res["E_pol2_B(E,E)_scaled"].value[ii,0],
+                    res["E_pol2_B(E,E)_scaled"].value[ii,1],res["E_pol2_A(E)_(trans,grnd)"].value[ii,0],res["E_pol2_A(E)_(trans,grnd)"].value[ii,1],
+                    res["E_pol1_A_static"].value[ii,0],res["E_pol1_A_static"].value[ii,1],res["E_pol2_B(E,E)"].value[ii,0],res["E_pol2_B(E,E)"].value[ii,1],
+                    res["E_elstat_1"].value[ii,0],res["E_elstat_1"].value[ii,1])
+            
+            os.system("".join(['echo "',text,'" >> Temp.dat']))
+            text = "----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|"
+            os.system("".join(['echo "',text,' " >> Temp.dat']))
+
+    return Einter, Eshift1, Eshift2, TrDip1, TrDip2
+
+
+def TEST_Compare_SingleDef_FGprop(filenames,ShortName,index_all,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=1,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+    ''' Compare magnitude of individual terms in energy shift calculation for 
+    defect in Fluorographene environment (so far only for first order of
+    perturbation expansion -> order = 1)
+    
+    Parameters
+    ----------
+    filenames : dictionary
+        Dictionary with information about all needed files which contains 
+        nessesary information for transformig the system into Dielectric class
+        and electrostatic calculations. Keys:
+            
+        * ``'1def_structure'``: xyz file with FG system with single defect 
+          geometry and atom types
+        * ``'charge_structure'``: xyz file with defect-like molecule geometry
+          for which transition charges were calculated corresponding to first
+          defect
+        * ``'charge'``: file with transition charges for the defect 
+          (from TrEsp charges fitting)
+        * ``'charge_grnd'``: file with ground state charges for the defect 
+          (from TrEsp charges fitting)
+        * ``'charge_exct'``: file with excited state charges for the defect 
+          (from TrEsp charges fitting)
+          
+    ShortName : string
+        Short description of the system 
+    index_all : list of integers (dimension 6)
+        There are specified indexes neded for asignment of defect 
+        atoms. First three indexes correspond to center and two main axes of 
+        reference structure (structure which was used for charges calculation)
+        and the last three indexes are corresponding atoms of the defect.
+    AlphaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    Alpha_E : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(-E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    BetaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Beta(E,E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    VinterFG : real
+        Difference in electrostatic interaction energy between interaction of
+        excited C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state and interaction of
+        ground state C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state. Units are ATOMIC 
+        UNITS (Hartree)
+    FG_charges : list of real (dimension 2)
+        [charge on inner fluorographene atom, charge on borded fluorographe carbon]
+    ChargeType : string
+        Specifies which charges should be used for electrostatic calculations
+        (ground and excited state charges) for defect atoms. Allowed types are:
+        ``'qchem'``, ``'qchem_all'``, ``'AMBER'`` and ``'gaussian'``. 
+        
+        * ``'qchem'`` - charges calculated by fiting Q-Chem ESP on carbon
+          atoms. 
+        * ``'qchem_all'`` - charges calculated by fiting Q-Chem ESP on all
+          atoms, only carbon charges are used and same charge is added to all 
+          carbon atoms in order to have neutral molecule. 
+        * ``'AMBER'`` - not yet fully implemented. 
+        * ``'gaussian'`` - not yet fully implemented.
+        
+    order : integer (optional - init=80)
+        Specify how many SCF steps shoudl be used in calculation  of induced
+        dipoles - according to the used model it should be 2
+    verbose : logical (optional - init=False)
+        If `True` aditional information about whole proces will be printed
+    approx : real (optional - init=1.1)
+        Specifies which approximation should be used.
+            
+        * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+          `Alpha(-E)`.
+        * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+        * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+          `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+    
+    Returns
+    --------
+    Eshift : Energy class
+        Transition energy shift for the defect due to the fluorographene
+        environment calculated from structure with single defect. Units are
+        energy managed
+    TrDip : numpy array of real (dimension 3)
+        Total transition dipole for the defect with environment effects 
+        included calculated from structure with single defect (in ATOMIC UNITS)
+        
+    Notes
+    --------
+    By comparing QC calculations it was found that energy shift from structure 
+    with two defects and with single defect is almost the same.
+    '''    
+    
+    # read and prepare molecule
+    mol_polar,index1,charge,struc=prepare_molecule_1Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,CoarseGrain=CoarseGrain,**kwargs)
+
+    # calculate dAVA = <A|V|A>-<G|V|G>
+    AditInfo={'Structure': struc,'index1': index1,'Output_exct': True}
+    mol_Elstat,index,charge_grnd,charge_exct=ElStat_PrepareMolecule_1Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
+    dAVA=mol_Elstat.get_EnergyShift()
+
+    # Calculate interaction with ground state charges
+    mol_Elstat.charge[index] = charge_grnd
+    E_elst_grnd = mol_Elstat.get_EnergyShift()
+    mol_Elstat.charge[index] = charge_exct - charge_grnd
+    
+    # Calculate interaction with excited state charges
+    mol_Elstat.charge[index] = charge_exct
+    E_elst_exct = mol_Elstat.get_EnergyShift()
+    mol_Elstat.charge[index] = charge_exct - charge_grnd
+
+    # Calculate interaction with transition density
+    mol_Elstat.charge[index] = charge
+    E_elst_trans = mol_Elstat.get_EnergyShift()
+    mol_Elstat.charge[index] = charge_exct - charge_grnd
+
+    # calculate transition energy shifts and transition dipole change      
+    res_Energy, res_Pot, TrDip = mol_polar._TEST_Compare_SingleDefectProperties(charge,charge_grnd,charge_exct,struc,index1,dAVA=dAVA,order=order,approx=approx)
+
+    charge_FG_grnd = mol_Elstat.charge.copy()
+    charge_FG_grnd[index] = 0.0
+    E_Pol1_env_static_ex_gr_FG = np.dot(charge_FG_grnd,res_Pot['Pol1-env_static_(exct-grnd)'])
+    E_Pol2_env_static_ex_gr_FG = np.dot(charge_FG_grnd,res_Pot['Pol2-env_static_(exct-grnd)'])
+    E_Pol1_env_BetaEE_ex_gr_FG = np.dot(charge_FG_grnd,res_Pot['Pol1-env_Beta(E,E)_(exct-grnd)'])
+    E_Pol1_env_BetaEE_trans_FG = np.dot(charge_FG_grnd,res_Pot['Pol1-env_Beta(E,E)_(trans)'])
+    E_Pol1_env_AlphaE_trans_FG = np.dot(charge_FG_grnd,res_Pot['Pol1-env_Alpha(E)_(trans)'])
+    E_Pol1_env_Alpha_E_trans_FG = np.dot(charge_FG_grnd,res_Pot['Pol1-env_Alpha(-E)_(trans)'])
+    E_Pol1_env_static_trans_FG = np.dot(charge_FG_grnd,res_Pot['Pol1-env_static_(trans)'])
+    #E_Polar_AlphaE_gr_ex_FG = 0.0
+    # pot_dipole_gr_ex = potential of induced dipoles induced by difference charges between ground and excited state (gr_charges - ex_charges)
+    
+    with energy_units("AU"):
+        E_elst_trans = EnergyClass(E_elst_trans)
+        E_elst_grnd = EnergyClass(E_elst_grnd)
+        E_elst_exct = EnergyClass(E_elst_exct)
+        E_Pol1_env_static_ex_gr_FG = EnergyClass(E_Pol1_env_static_ex_gr_FG)
+        E_Pol2_env_static_ex_gr_FG = EnergyClass(E_Pol2_env_static_ex_gr_FG)
+        E_Pol1_env_BetaEE_ex_gr_FG = EnergyClass(E_Pol1_env_BetaEE_ex_gr_FG)
+        E_Pol1_env_BetaEE_trans_FG = EnergyClass(E_Pol1_env_BetaEE_trans_FG)
+        E_Pol1_env_AlphaE_trans_FG = EnergyClass(E_Pol1_env_AlphaE_trans_FG)
+        E_Pol1_env_Alpha_E_trans_FG = EnergyClass(E_Pol1_env_Alpha_E_trans_FG)
+        E_Pol1_env_static_trans_FG = EnergyClass(E_Pol1_env_static_trans_FG)
+    
+
+    if MathOut:
+        if not os.path.exists("Pictures"):
+            os.makedirs("Pictures")
+        Bonds = GuessBonds(mol_polar.coor)
+        struc.guess_bonds()
+        
+        if CoarseGrain in ["plane","C","CF"]:
+            at_type = ['C']*mol_polar.Nat
+        elif CoarseGrain == "all_atom":
+            at_type = struc.at_type.copy()
+        
+        mat_filename = "".join(['Pictures/Charge_',ShortName,'_Exct-Grnd.nb'])
+        params = {'TrPointCharge': mol_Elstat.charge,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_Elstat.coor,struc.bonds,struc.at_type,**params)
+        
+        mol_Elstat.charge[index] = charge
+        mat_filename = "".join(['Pictures/Charge_',ShortName,'_Trans.nb'])
+        params = {'TrPointCharge': mol_Elstat.charge,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_Elstat.coor,struc.bonds,struc.at_type,**params)
+        
+#    res_Pot = {'Pol2-env_static_(exct-grnd)': pot2_dipole_ex_gr}
+#    res_Pot['Pol1-env_static_(exct-grnd)'] = pot1_dipole_ex_gr
+#    res_Pot['Pol1-env_Beta(E,E)_(exct-grnd)'] = pot1_dipole_betaEE_ex_gr
+#    res_Pot['Pol1-env_Beta(E,E)_(trans)'] = pot1_dipole_betaEE_tr
+#    res_Pot['Pol1-env_Alpha(E)_(trans)'] = pot1_dipole_AlphaE_tr
+#    res_Pot['Pol1-env_Alpha(-E)_(trans)'] = pot1_dipole_Alpha_E_tr
+#    res_Pot['Pol1-env_static_(trans)'] = pot1_dipole_static_tr
+#  
+#    res_Energy = {'dE_0-1': Eshift, 'dE_elstat(exct-grnd)': dAVA}
+#    res_Energy['E_pol1_Alpha(E)'] = Polar1_AlphaE
+#    res_Energy['E_pol2_Alpha(E)'] = Polar2_AlphaE
+#    res_Energy['E_pol1_Alpha(-E)'] = Polar1_Alpha_E
+#    res_Energy['E_pol2_Alpha(-E)'] = Polar2_Alpha_E
+#    res_Energy['E_pol1_Beta(E,E)'] = Polar1_Beta_EE
+#    res_Energy['E_pol1_static_(exct-grnd)'] = Polar1_static_ex_gr
+#    res_Energy['E_pol2_static_(exct-grnd)'] = Polar2_static_ex_gr
+#    res_Energy['E_pol1_Beta(E,E)_(exct-grnd)'] = Polar1_Beta_EE_ex_gr
+#    res_Energy['E_pol1_static_(trans)_(exct)'] = Polar1_static_tr_ex
+#    res_Energy['E_pol1_static_(trans)_(grnd)'] = Polar1_static_tr_gr
+#    res_Energy['E_pol1_Alpha(E)_(trans)_(grnd)'] = Polar1_AlphaE_tr_gr
+#    res_Energy['E_pol1_Alpha(-E)_(trans)_(exct)'] = Polar1_Alpha_E_tr_ex
+#    res_Energy['E_pol1_Beta(E,E)_(trans)_(exct-grnd)'] = Polar1_Beta_EE_tr_ex_gr
+#    
+
+    res_Energy['E_elstat_trans'] = E_elst_trans
+    res_Energy['E_pol1-env_static_(exct-grnd)'] = E_Pol1_env_static_ex_gr_FG
+    res_Energy['E_pol2-env_static_(exct-grnd)'] = E_Pol2_env_static_ex_gr_FG
+    res_Energy['E_pol1-env_Beta(E,E)_(exct-grnd)'] = E_Pol1_env_BetaEE_ex_gr_FG
+    res_Energy['E_pol1-env_Beta(E,E)_(trans)'] = E_Pol1_env_BetaEE_trans_FG
+    res_Energy['E_pol1-env_Alpha(E)_(trans)'] = E_Pol1_env_AlphaE_trans_FG
+    res_Energy['E_pol1-env_Alpha(-E)_(trans)'] = E_Pol1_env_Alpha_E_trans_FG
+    res_Energy['E_pol1-env_static_(trans)'] = E_Pol1_env_static_trans_FG
+        
+    # E_elst_grnd, E_elst_exct
+    return res_Energy, TrDip
+
+
+def Calc_SingleDef_FGprop_new(filenames,ShortName,index_all,E01,AlphaE,Alpha_E,BetaE,VinterFG,FG_charges,ChargeType,order=2,verbose=False,approx=1.1,MathOut=False,CoarseGrain="plane",**kwargs):
+    ''' Compare magnitude of individual terms in energy shift calculation for 
+    defect in Fluorographene environment (so far only for first order of
+    perturbation expansion -> order = 1)
+    
+    Parameters
+    ----------
+    filenames : dictionary
+        Dictionary with information about all needed files which contains 
+        nessesary information for transformig the system into Dielectric class
+        and electrostatic calculations. Keys:
+            
+        * ``'1def_structure'``: xyz file with FG system with single defect 
+          geometry and atom types
+        * ``'charge_structure'``: xyz file with defect-like molecule geometry
+          for which transition charges were calculated corresponding to first
+          defect
+        * ``'charge'``: file with transition charges for the defect 
+          (from TrEsp charges fitting)
+        * ``'charge_grnd'``: file with ground state charges for the defect 
+          (from TrEsp charges fitting)
+        * ``'charge_exct'``: file with excited state charges for the defect 
+          (from TrEsp charges fitting)
+          
+    ShortName : string
+        Short description of the system 
+    index_all : list of integers (dimension 6)
+        There are specified indexes neded for asignment of defect 
+        atoms. First three indexes correspond to center and two main axes of 
+        reference structure (structure which was used for charges calculation)
+        and the last three indexes are corresponding atoms of the defect.
+    AlphaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    Alpha_E : numpy.array of real (dimension 2x2)
+        Atomic polarizability Alpha(-E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    BetaE : numpy.array of real (dimension 2x2)
+        Atomic polarizability Beta(E,E) for C-F corse grained atoms of 
+        fluorographene in ATOMIC UNITS (Bohr^2 - because 2D)
+    VinterFG : real
+        Difference in electrostatic interaction energy between interaction of
+        excited C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state and interaction of
+        ground state C-F corse grained atom of fluorographene with all others
+        fluorographene corse grained atoms in ground state. Units are ATOMIC 
+        UNITS (Hartree)
+    FG_charges : list of real (dimension 2)
+        [charge on inner fluorographene atom, charge on borded fluorographe carbon]
+    ChargeType : string
+        Specifies which charges should be used for electrostatic calculations
+        (ground and excited state charges) for defect atoms. Allowed types are:
+        ``'qchem'``, ``'qchem_all'``, ``'AMBER'`` and ``'gaussian'``. 
+        
+        * ``'qchem'`` - charges calculated by fiting Q-Chem ESP on carbon
+          atoms. 
+        * ``'qchem_all'`` - charges calculated by fiting Q-Chem ESP on all
+          atoms, only carbon charges are used and same charge is added to all 
+          carbon atoms in order to have neutral molecule. 
+        * ``'AMBER'`` - not yet fully implemented. 
+        * ``'gaussian'`` - not yet fully implemented.
+        
+    order : integer (optional - init=80)
+        Specify how many SCF steps shoudl be used in calculation  of induced
+        dipoles - according to the used model it should be 2
+    verbose : logical (optional - init=False)
+        If `True` aditional information about whole proces will be printed
+    approx : real (optional - init=1.1)
+        Specifies which approximation should be used.
+            
+        * **Approximation 1.1**: Neglect of `Beta(-E,-E)` and `Beta(-E,E)` and 
+          `Alpha(-E)`.
+        * **Approximation 1.2**: Neglect of `Beta(-E,-E)` and `tilde{Beta(E)}`.
+        * **Approximation 1.3**: `Beta(E,E)=Beta(-E,E)=Beta(-E,-E)` and also
+          `Alpha(E)=Alpha(-E)`, however the second one is not condition 
+    
+    Returns
+    --------
+    Eshift : Energy class
+        Transition energy shift for the defect due to the fluorographene
+        environment calculated from structure with single defect. Units are
+        energy managed
+    TrDip : numpy array of real (dimension 3)
+        Total transition dipole for the defect with environment effects 
+        included calculated from structure with single defect (in ATOMIC UNITS)
+        
+    Notes
+    --------
+    By comparing QC calculations it was found that energy shift from structure 
+    with two defects and with single defect is almost the same.
+    '''    
+    
+    # read and prepare molecule
+    mol_polar,index1,charge,struc=prepare_molecule_1Def(filenames,index_all,AlphaE,Alpha_E,BetaE,VinterFG,verbose=False,CoarseGrain=CoarseGrain,**kwargs)
+
+    # calculate dAVA = <A|V|A>-<G|V|G>
+    AditInfo={'Structure': struc,'index1': index1,'Output_exct': True}
+    mol_Elstat,index,charge_grnd,charge_exct=ElStat_PrepareMolecule_1Def(filenames,index_all,FG_charges,ChargeType=ChargeType,verbose=False,**AditInfo)
+    dAVA=mol_Elstat.get_EnergyShift()
+#    dAVA2, dAVA_R = mol_Elstat.get_EnergyShift_and_Derivative()
+#    print(dAVA,dAVA2,dAVA-dAVA2)
+
+    # calculate transition energy shifts and transition dipole change      
+    # res_Energy, res_Pot, TrDip = mol_polar._TEST_Compare_SingleDefectProperties(charge,charge_grnd,charge_exct,struc,index1,dAVA=dAVA,order=order,approx=approx)
+    Eshift,res_Energy,TrDip = mol_polar.get_SingleDefectProperties_new(charge_grnd, charge_exct, mol_Elstat, struc, index1, E01, dAVA=dAVA, order=order, approx=approx)
+
+    if MathOut:
+        if not os.path.exists("Pictures"):
+            os.makedirs("Pictures")
+        Bonds = GuessBonds(mol_polar.coor)
+        struc.guess_bonds()
+        
+        if CoarseGrain in ["plane","C","CF"]:
+            at_type = ['C']*mol_polar.Nat
+        elif CoarseGrain == "all_atom":
+            at_type = struc.at_type.copy()
+        
+        mat_filename = "".join(['Pictures/Charge_',ShortName,'_Exct-Grnd.nb'])
+        params = {'TrPointCharge': mol_Elstat.charge,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_Elstat.coor,struc.bonds,struc.at_type,**params)
+        
+        mol_Elstat.charge[index] = charge
+        mat_filename = "".join(['Pictures/Charge_',ShortName,'_Trans.nb'])
+        params = {'TrPointCharge': mol_Elstat.charge,'rSphere_dip': 0.5,'rCylinder_dip':0.1}
+        OutputMathematica(mat_filename,mol_Elstat.coor,struc.bonds,struc.at_type,**params)
+
+    return Eshift, TrDip
+
 
 '''----------------------- TEST PART --------------------------------'''
 if __name__=="__main__":

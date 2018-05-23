@@ -13,7 +13,7 @@ from .Classes.general import Energy,Coordinate,Dipole
 
 
 if (platform=='cygwin' or platform=="linux" or platform == "linux2"):
-        from Program_Manager.QuantumChem.Fortran.wrapper import w_fortranmodule as fortran
+        from .Fortran.wrapper import w_fortranmodule as fortran
 #if (platform=='cygwin' or platform=="linux" or platform == "linux2"):
 #        from Program_Test.QuantumChem.Fortran.wrapper import w_fortranmodule as fortran
 
@@ -187,7 +187,7 @@ def dipole_dipole(center1,dipole1,center2,dipole2,*args):
         
         
         dr1=np.dot(dipole1,r12)/R
-        dr2=np.dot(dipole2,r12)/R    
+        dr2=np.dot(dipole2,r12)/R
         
         Edip_dip_Ha=(d12 - 3*dr1*dr2)/(R**3)   # interaction energy in hartree
         Edip_dip_cm1=Edip_dip_Ha*conversion_facs_energy["1/cm"]

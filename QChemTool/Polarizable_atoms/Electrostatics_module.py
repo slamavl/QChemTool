@@ -10,6 +10,7 @@ from ..QuantumChem.Classes.structure import Structure
 from ..QuantumChem.interaction import charge_charge
 from ..QuantumChem.calc import identify_molecule
 from ..QuantumChem.read_mine import read_TrEsp_charges, read_mol2, read_gaussian_esp
+from ..General.Potential import potential_charge, ElField_charge
 
 
 #==============================================================================
@@ -61,7 +62,7 @@ class Electrostatics:
 
             for ii in range(len(index)):
                 charge_tmp[ii] = self.charge[index[ii]]
-                self.charge[ii] = charge[ii]
+                self.charge[index[ii]] = charge[ii]
         
         # ground state interaction
         Def_charge=[]
@@ -71,8 +72,16 @@ class Electrostatics:
         # Separate defect and environment
         for ii in range(self.Nat):
             if self.at_type[ii]=='CD':
-                Def_charge.append(self.charge[ii])
-                Def_coor.append(self.coor[ii])
+                if index is not None:
+                    if ii in index:
+                        Env_charge.append(self.charge[ii])
+                        Env_coor.append(self.coor[ii])
+                    else:
+                        Def_charge.append(self.charge[ii])
+                        Def_coor.append(self.coor[ii])
+                else:
+                    Def_charge.append(self.charge[ii])
+                    Def_coor.append(self.coor[ii])
             else:
                  Env_charge.append(self.charge[ii])
                  Env_coor.append(self.coor[ii])
@@ -91,6 +100,108 @@ class Electrostatics:
                 self.charge[index[ii]] = charge_tmp[ii]
         
         return Eshift
+    
+    def get_EnergyShift_and_Derivative(self,index=None,charge=None):
+        ''' Function calculates change in electrostatic interaction energy between
+        environment and defect in ground state and defect in excited state and 
+        derivative of this energy with respect to atomic coordinates.
+        <A|V|A>-<G|V|G> and d(<A|V|A>-<G|V|G>)/dRi
+        
+        Parameters
+        -------
+        index : list of integers
+            Indexes of atoms of one of the defects for which charges should be
+            replaced by charges defined in ``charge``
+        charge : list or numpy array of real
+            New charges for atoms defined in ``index`` for calculation of
+            interaction energy (usually ground state or zero charges)
+        
+        Returns
+        -------
+        Eshift : real
+            Change in interaction energy for pigment in ground state and in 
+            excited state in ATOMIC UNITS (Hartree)
+        '''
+        
+        # Zero charges on atoms defined by index
+        if index is not None:
+            charge_tmp = np.zeros(len(index),dtype='f8')
+            if charge is None:
+                charge = np.zeros(len(index),dtype='f8')
+
+            for ii in range(len(index)):
+                charge_tmp[ii] = self.charge[index[ii]]
+                self.charge[index[ii]] = charge[ii]
+            
+            
+        
+        # ground state interaction
+        Def_charge=[]
+        Def_coor=[]
+        Env_charge=[]
+        Env_coor=[]
+        Mask = np.zeros(self.Nat,dtype="bool")
+        # Separate defect and environment
+        for ii in range(self.Nat):
+            if self.at_type[ii]=='CD':
+                if index is not None:
+                    if ii in index:
+                        Env_charge.append(self.charge[ii])
+                        Env_coor.append(self.coor[ii])
+                    else:
+                        Def_charge.append(self.charge[ii])
+                        Def_coor.append(self.coor[ii])
+                        Mask[ii]=True
+                else:
+                    Def_charge.append(self.charge[ii])
+                    Def_coor.append(self.coor[ii])
+                    Mask[ii]=True
+            else:
+                 Env_charge.append(self.charge[ii])
+                 Env_coor.append(self.coor[ii])
+        
+        Def_charge=np.array(Def_charge,dtype='f8')
+        Def_coor=np.array(Def_coor,dtype='f8')
+        Env_charge=np.array(Env_charge,dtype='f8')
+        Env_coor=np.array(Env_coor,dtype='f8')
+        
+        # Calculate distance matrix
+        R_env = np.tile(Env_coor,(len(Def_coor),1,1))
+        R_def = np.tile(Def_coor,(len(Env_coor),1,1))
+        R_def2env = (R_env - np.swapaxes(R_def,0,1))            # R[ii,jj,:]=coor_env[jj]-coor_def[ii]
+        R_env2def = (R_def - np.swapaxes(R_env,0,1))
+        
+        # calculate potential and electric field of defect charges
+        Potential = potential_charge(Def_charge,R_def2env)
+        El_field_def2env = ElField_charge(Def_charge,R_def2env)
+        El_field_env2def = ElField_charge(Env_charge,R_env2def)
+        
+        # Calculate electrostatic shifts and it's derivative
+        Eshift = np.dot(Env_charge,Potential)
+        Def_charge_3D = np.tile(Def_charge,(3,1))
+        Def_charge_3D = np.swapaxes(Def_charge_3D,0,1)
+        Env_charge_3D = np.tile(Env_charge,(3,1))
+        Env_charge_3D = np.swapaxes(Env_charge_3D,0,1)
+        dEshift_env = -El_field_def2env*Env_charge_3D
+        dEshift_def = -El_field_env2def*Def_charge_3D
+        dEshift_R = np.zeros((self.Nat,3),dtype='f8')
+        count_def = 0
+        count_env = 0
+        for ii in range(self.Nat):
+            if Mask[ii]:
+                dEshift_R[ii] = dEshift_def[count_def]
+                count_def += 1 
+            else:
+                dEshift_R[ii] = dEshift_env[count_env]
+                count_env += 1 
+        dEshift_R = np.reshape(dEshift_R,3*self.Nat)
+        
+        # return charges back to original value
+        if index is not None:
+            for ii in range(len(index)):
+                self.charge[index[ii]] = charge_tmp[ii]
+        
+        return Eshift, dEshift_R
         
 
 def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False,**kwargs):
@@ -266,7 +377,7 @@ def PrepareMolecule_1Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     
     Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type) 
     
-    return Elstat_mol,index1,charge_grnd
+    return Elstat_mol,index1,charge_grnd, charge_exct
 
 def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose=False,**kwargs):
     ''' Read all informations needed for Electrostatics class and transform system
@@ -460,7 +571,9 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
             elif ii in index1:
                 Elstat_Type.append('CD')
             elif ii in index2:
-                Elstat_Type.append('C')
+                Elstat_Type.append('CD')
+            else:
+                raise IOError("Wrong number of bonds for carbon atom")
         elif struc.at_type[ii]=='F':
             Elstat_Type.append('FC')
     
@@ -471,10 +584,13 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
     
     # Check if defect carbons were correctly determined:
     for ii in range(struc.nat):
-        if Elstat_Type[ii]=='CD' and ( not (ii in index1)):
-            raise IOError('Wrongly determined defect atoms')
-        if Elstat_Type[ii]=='C' and ( not (ii in index2)):
-            raise IOError('Wrongly determined defect atoms')
+        if Elstat_Type[ii]=='CD':
+            if not (ii in index1 or ii in index2):
+                raise IOError('Wrongly determined defect atoms')
+#        if Elstat_Type[ii]=='CD' and ( not (ii in index1)):
+#            raise IOError('Wrongly determined defect atoms')
+#        if Elstat_Type[ii]=='C' and ( not (ii in index2)):
+#            raise IOError('Wrongly determined defect atoms')
             
     # Asign charges for fluorographene:
     Elstat_Charge=np.zeros(struc.nat,dtype='f8')
@@ -494,8 +610,8 @@ def PrepareMolecule_2Def(filenames,indx,FG_charges_in,ChargeType='qchem',verbose
         Elstat_Charge[index2[ii]]=charge_exct2[ii]-charge_grnd2[ii]
     
     Elstat_mol=Electrostatics(struc.coor._value,Elstat_Charge,Elstat_Type)
-    
-    return Elstat_mol,index1,index2,charge_grnd1,charge_grnd2
+        
+    return Elstat_mol,index1,index2,charge_grnd1,charge_grnd2,charge_exct1,charge_exct2
 
 #def _CalculateEshift(filenames,ShortName,index_all,Eshift_QCH,Eshift_all,FG_charges,AlphaE,Alpha_E,BetaE,nvec_all,order=82,ChargeType='qchem',verbose=False):
 #    ''' Calculates transition energy shift for molecule embeded in polarizable 

@@ -1,0 +1,14 @@
+%chk=ethen_NormalMode1_0.003au.chk
+#p B3LYP/6-31G(d,p) GFprint GFinput Iop(7/8=30)
+
+Vypocet molekuly ethenu pro posuniti 0.01 au po koordinate normaliho modu 1
+
+0 1 
+ C     0.00006363     0.66503625     0.00000000
+ H    -0.92382969     1.23727997    -0.00000000
+ H     0.92302547     1.23872552    -0.00000000
+ C     0.00006364    -0.66503609    -0.00000000
+ H     0.92307023    -1.23867283     0.00000000
+ H    -0.92377664    -1.23733361    -0.00000000
+ 
+ 
