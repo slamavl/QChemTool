@@ -414,7 +414,7 @@ class Structure(PositionUnitsManaged):
 
         # Prepare
         if is_AtType:
-            indxH = np.argwhere(self.at_type=='H').T[0]
+            indxH = np.argwhere(np.array(self.at_type)=='H').T[0]
             nH = len(indxH)
         test = cKDTree(self.coor._value)
         Bonds = test.query_pairs(bond_length,output_type='ndarray')
