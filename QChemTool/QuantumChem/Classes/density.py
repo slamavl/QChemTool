@@ -363,7 +363,7 @@ class DensityGrid(PositionUnitsManaged):
         self._step=RotateAndMove(self._step,0.0,0.0,0.0,Phi,Psi,Chi)
     
     
-    def dipole(self):
+    def dipole(self,output_center=False):
         ''' Calculate numericaly dipole from density. For ground state electron
         density it calculates ground state dipole and fror transition density
         it calculates transition dipole
@@ -394,16 +394,22 @@ class DensityGrid(PositionUnitsManaged):
         
         else:
             # more efficient would be to create 3D grids with coordinates then multiply and then sum all
-            dipole=np.zeros(3,dtype='f8')
+            dipole = np.zeros(3,dtype='f8')
+            center = np.zeros(3,dtype='f8')
             for ii in range(self.grid[0]):
                 for jj in range(self.grid[1]):
                     for kk in range(self.grid[2]):
                         rr=self._origin+ii*self._step[0,:]+jj*self._step[1,:]+kk*self._step[2,:]
                         dipole+=self.data[ii,jj,kk]*rr
+                        center+=np.abs(self.data[ii,jj,kk])*rr
             dV=np.dot(self._step[0,:],np.cross(self._step[1,:],self._step[2,:]))
             dipole=dipole*dV
+            center = center/np.sum(np.abs(self.data))
             print('Dipole calculated by function dipole was chaged from -dipole to dipole. Make sure that you are using right value')
-            return -dipole
+            if output_center:
+                return -dipole,center
+            else:
+                return -dipole
     
     def dipole_partial(self,x_min=None,x_max=None,y_min=None,y_max=None,z_min=None,z_max=None):
         ''' Calculate numericaly dipole from part of the density. For ground

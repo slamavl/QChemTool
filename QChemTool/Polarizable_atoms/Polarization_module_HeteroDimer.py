@@ -2748,8 +2748,9 @@ class Dielectric:
             raise IOError('Unsupported approximation')
             
     
-    def get_gmm(self,gr_charge, ex_charge, FG_elstat, struc, index, E01, int2cart, freq, red_mass, order=2, approx=1.1, CoarseGrain='C'):
-        """ Calciulate coupling strength of the site energy to atomic coordinates. 
+    def get_gmm(self,gr_charge, ex_charge, FG_elstat, struc, index, E01, 
+                int2cart, freq, red_mass, order=2, approx=1.1, CoarseGrain='C'):
+        """ Calculate coupling strength of the site energy to atomic coordinates. 
         The reult is dimensionless coupling strength and resulting spectral
         density is defined as \sum_xi {gmm_xi*gmm_xi*\delta(omega-omega_xi)}
         
