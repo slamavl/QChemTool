@@ -87,15 +87,11 @@ def rsmd(coor1,coor2):
     res=numpy.sqrt(res)
     return res
 
-def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=False):
+def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=False,output_RSMD=False):
     from .positioningTools import AlignMolecules
-   
-    if struc.coor.units!=struc_test.coor.units:
-        struc.coor.Angst2Bohr()
-        struc_test.coor.Angst2Bohr()
         
     
-    Coor_alligned=AlignMolecules(struc.coor.value,struc_test.coor.value,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test)
+    Coor_alligned=AlignMolecules(struc.coor._value,struc_test.coor._value,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test)
     # Toto by melo posunout optimalizovanou molekulu do pozice te na fluorofrafenu
     
     # By comparison distance between same atomic types we can guess correspondding atoms
@@ -111,11 +107,12 @@ def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_
             r1=Coor_alligned[i]
             type1=struc_test.at_type[i]
             if type1=='C':
-                min_distance=20.0
+                min_distance=30.0
                 for j in range(struc.nat):
-                    r2=struc.coor.value[j]
+                    r2=struc.coor._value[j]
                     type2=struc.at_type[j]
                     if type1==type2:
+                        #Coor_test.append(r2)
                         dist=numpy.sqrt(numpy.dot(r1-r2,r1-r2))
                         if dist<min_distance:
                             min_distance=numpy.copy(dist)
@@ -128,16 +125,34 @@ def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_
             #r1=mol_test.at_spec['Coor'][i]
             r1=Coor_alligned[i]
             type1=struc_test.at_type[i]
-            min_distance=20.0
+            min_distance=30.0
             for j in range(struc.nat):
-                r2=struc.coor.value[j]
+                r2=struc.coor._value[j]
                 type2=struc.at_type[j]
                 if type1==type2:
                     dist=numpy.sqrt(numpy.dot(r1-r2,r1-r2))
                     if dist<min_distance:
                         min_distance=numpy.copy(dist)
                         index1[i]=j
-    return index1
+    
+    Coor_test =  struc.coor._value[index1]
+    
+    if len(numpy.unique(index1)) != len(index1):
+        index1 = []
+        RSMD = 1.0e4
+        if output_RSMD:
+            return index1, RSMD
+        else:
+            return index1
+        
+        
+    if output_RSMD:
+        Coor_test = numpy.array(Coor_test,dtype='f8')
+        # calculate rsmd(coor1,coor2) between two molecules
+        RSMD = rsmd(Coor_alligned,Coor_test)
+        return index1, RSMD
+    else:
+        return index1
 
 def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=False):
     from .interaction import dipole_dipole 
