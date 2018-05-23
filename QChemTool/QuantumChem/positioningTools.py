@@ -465,6 +465,7 @@ def CenterMolecule(Coor,indx_center,indx_x,indx_y,print_angles=False,debug=False
         center = kwargs["center"]
         VecX = kwargs["vec"][0]
         VecY = kwargs["vec"][1]
+        NAtom=numpy.shape(Coor)[0]
     else:
         if isinstance(indx_center,list):
             listcenter=True

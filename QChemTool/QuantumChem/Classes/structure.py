@@ -101,6 +101,8 @@ class Structure(PositionUnitsManaged):
         Delete atoms specified by indexes from the structure.
     guess_bonds :
         Add bonds between atoms which are close together
+    get_bonded_atoms :
+        
     count_fragments :
         Count how many separate structures are in the structure and outputs
         indexes of individual separate units.
@@ -329,7 +331,7 @@ class Structure(PositionUnitsManaged):
             self.tr_quadrR2=None
 # TODO: Rotate grid
             
-    def center(self,indx_center,indx_x,indx_y,debug=False):
+    def center(self,indx_center,indx_x,indx_y,debug=False,**kwargs):
         """
         Centers the structure according to defined center and two main axis.
         Axis and center are defined by atomic indexes and after centering center
@@ -377,7 +379,7 @@ class Structure(PositionUnitsManaged):
             
         """
         
-        New_coor,Phi,Psi,Chi,center=CenterMolecule(self.coor.value,indx_center,indx_x,indx_y,print_angles=True,debug=debug)
+        New_coor,Phi,Psi,Chi,center=CenterMolecule(self.coor.value,indx_center,indx_x,indx_y,print_angles=True,debug=debug,**kwargs)
         self.move(-center[0],-center[1],-center[2])
         self.rotate(Phi,Psi,Chi)
         
@@ -409,7 +411,6 @@ class Structure(PositionUnitsManaged):
             is_AtType=True
         else:
             is_AtType=False
-        
 
         # Prepare
         if is_AtType:
@@ -431,6 +432,25 @@ class Structure(PositionUnitsManaged):
         
         self.bonds = Bonds
     
+    def get_bonded_atoms(self):
+        """ Finds connected atoms by chemical bond
+        
+        """
+        if self.bonds is None:
+            self.guess_bonds()
+        
+        connected = []
+        for ii in range(self.nat):
+            connected.append([])
+        
+        for ii in range(len(self.bonds)):
+            atom1 = self.bonds[ii][0]
+            atom2 = self.bonds[ii][1]
+            
+            connected[atom1].append(atom2)
+            connected[atom2].append(atom1)
+        return connected
+        
     def count_fragments(self,verbose=False):
         ''' Divide the structure into individual units between which there is
         no bond.
@@ -465,6 +485,7 @@ class Structure(PositionUnitsManaged):
             if verbose:
                 print('There is only single molecule in',self.name)
                 print(' ')
+            Molecules=[np.arange(self.nat)]
         else:
             for cc in nx.connected_component_subgraphs(g):
                 if verbose:
