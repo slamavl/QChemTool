@@ -66,9 +66,9 @@ class Manager(metaclass=Singleton):
                       "time",
                       "position"]
 
-    units = {"energy"       : ["2pi/fs", "int", "1/cm", "eV", "meV", "THz",
+    units = {"energy"       : ["int", "1/cm", "eV", "meV", "THz",
                                "J", "SI", "nm", "Ha", "AU"],
-             "frequency"    : ["2pi/fs", "int", "1/cm", "THz","Hz","SI"],
+             "frequency"    : ["1/fs", "int", "1/cm", "THz","Hz","SI","nm"],
              "dipolemoment" : ["Debye"],
              "temperature"  : ["2pi/fs", "int", "Kelvin", "Celsius",
                                "1/cm", "eV", "meV", "Thz", "SI"],
@@ -98,6 +98,7 @@ class Manager(metaclass=Singleton):
                    "1/cm":"cm$^-1$",
                    "THz":"THz",
                    "eV":"eV",
+                   "1/fs":"fs$^{-1}$",
                    "2pi/fs":"rad$\cdot$fs$^{-1}$",
                    "meV":"meV",
                    "nm":"nm",
@@ -110,13 +111,13 @@ class Manager(metaclass=Singleton):
 
         #self.current_units = {}
         # Load or save 
-        self.current_units = {"energy":"Ha", "frequency":"2pi/fs",
+        self.current_units = {"energy":"Ha", "frequency":"1/fs",
                                "dipolemoment":"AU",
                                "temperature":"Kelvin",
                                "position":"Bohr"}
 
         # internal units are hardwired
-        self.internal_units = {"energy":"Ha", "frequency":"2pi/fs",
+        self.internal_units = {"energy":"Ha", "frequency":"1/fs",
                                "dipolemoment":"AU",
                                "temperature":"Kelvin",
                                "position":"Bohr"}
@@ -366,6 +367,12 @@ class UnitsManaged(Managed):
     
     def convert_position_2_current_u(self,val):
         return self.manager.convert_position_2_current_u(val)
+    
+    def convert_frequency_2_internal_u(self,val):
+        return self.manager.convert_frequency_2_internal_u(val)
+    
+    def convert_frequency_2_current_u(self,val):
+        return self.manager.convert_frequency_2_current_u(val)
         
     def unit_repr(self,utype="energy"):
         return self.manager.unit_repr(utype)
@@ -473,16 +480,46 @@ class position_units(units_context_manager):
         self.manager.set_current_units(self.utype,self.units)
         
     def __exit__(self,ext_ty,exc_val,tb):
-        self.manager.set_current_units("position",self.units_backup)     
+        self.manager.set_current_units("position",self.units_backup)
         
-class frequency_units(energy_units):
+class FrequencyUnitsManaged(Managed):
+    
+    utype = "frequency"
+    units = "1/fs"    
+    
+    def convert_2_internal_u(self,val):
+        return self.manager.convert_frequency_2_internal_u(val)
+        
+    def convert_2_current_u(self,val):
+        return self.manager.convert_frequency_2_current_u(val)
+
+    def unit_repr(self):
+        return self.manager.unit_repr("frequency")
+
+    def unit_repr_latex(self,utype="frequency"):
+        return self.manager.unit_repr_latex(utype)  
+
+class frequency_units(units_context_manager):
     """Context manager for units of frequency
     
-    It behaves exactly the same as ``energy_units`` context manager.
     
     """
-    pass
+    
+    def __init__(self,units):
+        super().__init__(utype="frequency")
         
+        if units in self.manager.units["frequency"]:
+            self.units = units
+        else:
+            raise Exception("Unknown frequency units")
+            
+    def __enter__(self):
+        # save current energy units
+        self.units_backup = self.manager.get_current_units("frequency")
+        self.manager.set_current_units(self.utype,self.units)
+        
+    def __exit__(self,ext_ty,exc_val,tb):
+        self.manager.set_current_units("frequency",self.units_backup)       
 
 
 def set_current_units(units=None):
@@ -496,9 +533,9 @@ def set_current_units(units=None):
             if utype in manager.allowed_utypes:
                 un = units[utype]
                 # handle the identity of "frequency" and "energy"
-                if utype=="frequency":
-                    utype="energy"
-                    un = units["frequency"]
+#                if utype=="frequency":
+#                    utype="energy"
+#                    un = units["frequency"]
                     
                 manager.set_current_units(utype,un)
             else:
