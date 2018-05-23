@@ -13,8 +13,77 @@ from ...General.UnitsManager import position_units
 from ..read_mine import read_amber_restart, read_AMBER_prepc, read_AMBER_NModes
 from ..vibration import Proces_AMBER_Nmodes
 from ..Classes.structure import Structure
+from ..Classes.molecule import Molecule
 from ..calc import rsmd
 from ..positioningTools import SolveAngle
+
+def orientFG(struc_in):
+    from ..positioningTools import project_on_plane, fit_plane
+    
+    if isinstance(struc_in,Structure):
+        struc = struc_in.copy()
+        indxC = np.where(np.array(struc.at_type)=='C')[0]
+        NC = len(indxC)
+        coorC = struc.coor._value[indxC]
+        nvec,origin = fit_plane(coorC)
+        coor_projected = project_on_plane(coorC,nvec,origin)
+        center = np.sum(coor_projected,axis=0)/NC
+        
+        # find nearest atom to the center
+        dist = np.linalg.norm(center-coor_projected)
+        indx_min = np.argmin(dist)
+        dist = np.linalg.norm(coor_projected[indx_min]-coor_projected,axis=1)
+        indx_y = dist.argsort()[1]
+        
+        vecY = coor_projected[indx_y] - coor_projected[indx_min]
+        vecY = vecY/np.linalg.norm(vecY)
+        vecZ = nvec/np.linalg.norm(nvec)
+        vecX = np.cross(vecY,vecZ)
+        
+        params = {"center": center,"vec": [vecX,vecY]}
+
+        Phi,Psi,Chi,center = struc.center(None,None,None,**params)
+        
+        return struc
+    
+    elif isinstance(struc_in,Molecule):
+        struc = struc_in.struc.copy()
+        indxC = np.where(np.array(struc.at_type)=='C')[0]
+        NC = len(indxC)
+        coorC = struc.coor._value[indxC]
+        nvec,origin = fit_plane(coorC)
+        coor_projected = project_on_plane(coorC,nvec,origin)
+        center = np.sum(coor_projected,axis=0)/NC
+        
+        # find nearest atom to the center
+        dist = np.linalg.norm(center-coor_projected)
+        indx_min = np.argmin(dist)
+        dist = np.linalg.norm(coor_projected[indx_min]-coor_projected,axis=1)
+        indx_y = dist.argsort()[1]
+        
+        vecY = coor_projected[indx_y] - coor_projected[indx_min]
+        vecY = vecY/np.linalg.norm(vecY)
+        vecZ = nvec/np.linalg.norm(nvec)
+        vecX = np.cross(vecY,vecZ)
+        
+        params = {"center": center,"vec": [vecX,vecY]}
+
+        Phi,Psi,Chi,center = struc.center(None,None,None,**params)
+        
+        mol = struc_in.copy()
+        mol.move(-center[0],-center[1],-center[2])
+        mol.rotate(Phi,Psi,Chi)
+        
+        return mol
+        
+    else:
+        raise Warning("Only structure class can be used as an input")
+    
+    
+        
+            
+        
+        
 
 def deleteFG(struc,add_hydrogen=False,Hdist=2.0031,Fragmentize=False):
     """ Delete fluorographene atoms from structure and keeps only defect atoms.
@@ -114,27 +183,27 @@ def constrainsFG(struc,border=True,defect=False):
         struc.guess_bonds()
     
     # border carbons - conected to only 2 other carbons + cabons conected to these
-    if border:
-        constrains=np.zeros(struc.nat,dtype='bool')
-        Nbonds = np.zeros(struc.nat,dtype='i8')
-        connect_CC=[]
-        connect_CF=[]
-        for ii in range(struc.nat):
-            connect_CC.append([])
-            connect_CF.append([])
-        for bond in struc.bonds:
-            if struc.at_type[bond[0]]=='C' and struc.at_type[bond[1]]=='C':
-                Nbonds[bond[0]] += 1
-                Nbonds[bond[1]] += 1
-                connect_CC[bond[0]].append(bond[1])
-                connect_CC[bond[1]].append(bond[0])
-            elif struc.at_type[bond[0]]=='C' and struc.at_type[bond[1]]=='F':
-                connect_CF[bond[0]].append(bond[1])
-                connect_CF[bond[1]].append(bond[0])
-            elif struc.at_type[bond[0]]=='F' and struc.at_type[bond[1]]=='C':
-                connect_CF[bond[0]].append(bond[1])
-                connect_CF[bond[1]].append(bond[0])
-            
+    constrains=np.zeros(struc.nat,dtype='bool')
+    Nbonds = np.zeros(struc.nat,dtype='i8')
+    connect_CC=[]
+    connect_CF=[]
+    for ii in range(struc.nat):
+        connect_CC.append([])
+        connect_CF.append([])
+    for bond in struc.bonds:
+        if struc.at_type[bond[0]]=='C' and struc.at_type[bond[1]]=='C':
+            Nbonds[bond[0]] += 1
+            Nbonds[bond[1]] += 1
+            connect_CC[bond[0]].append(bond[1])
+            connect_CC[bond[1]].append(bond[0])
+        elif struc.at_type[bond[0]]=='C' and struc.at_type[bond[1]]=='F':
+            connect_CF[bond[0]].append(bond[1])
+            connect_CF[bond[1]].append(bond[0])
+        elif struc.at_type[bond[0]]=='F' and struc.at_type[bond[1]]=='C':
+            connect_CF[bond[0]].append(bond[1])
+            connect_CF[bond[1]].append(bond[0])
+    
+    if border:        
         BorderC1=np.where(Nbonds==2)[0]
         
         for ii in BorderC1:
