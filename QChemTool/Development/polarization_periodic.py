@@ -54,7 +54,7 @@ class PolarAtom:
         
         self.per = per
         self.phase = phase
-        self.polz = polz
+        self.polz = abs(polz)
     
     def _polarizability4angle(self,angle):
         phi = angle - self.phase
@@ -64,22 +64,6 @@ class PolarAtom:
     
     def get_polarizability4elf(self,E):
         Phi=np.arctan2(E[1],E[0])
-        
-#        norm = np.linalg.norm(E)
-#        if abs(norm) < 1e-8:
-#            return np.zeros(3)
-#        else:
-#            nvec = E / np.linalg.norm(E)
-#        # determine angle phi (between x axis and projection of electric field to xy plane)
-#        if (np.isclose(nvec[1],0,atol=1e-7) and np.isclose(nvec[0],0,atol=1e-7)) or np.isclose(abs(nvec[2]),1.0,atol=1e-4):
-#            Phi=0.0
-#        elif np.isclose(nvec[0],0,atol=1e-4):
-#            if nvec[1]<0:
-#                Phi = -np.pi/2
-#            else:
-#                Phi = np.pi/2
-#        else:
-#            Phi=np.arctan(nvec[1]/nvec[0])
         
         # calculate polarizability for the angle
         polar = self._polarizability4angle(Phi)
@@ -180,8 +164,38 @@ class Dielectric:
                     polarizable_atom = PolarAtom(0.0,0.0,0,0.0) 
                 self.polar[poltype].append(polarizable_atom)
     
+    def _get_geom_phase(self):
+        from ..QuantumChem.calc import GuessBonds
+        
+        Nat = self.Nat
+        phase = np.zeros(Nat,dtype="f8")
+        bonds = GuessBonds(self.coor,bond_length=4.0)
+        connected = []
+        for ii in range(Nat):
+            connected.append([])
+        
+        for ii in range(len(bonds)):
+            atom1 = bonds[ii][0]
+            atom2 = bonds[ii][1]
+            connected[atom1].append(atom2)
+            connected[atom2].append(atom1)
+        
+        pairs = np.zeros((2,Nat),dtype='i8')
+        for ii in range(Nat):
+            pairs[:,ii] = [ii,connected[ii][0]] 
+        
+        vecs = self.coor[pairs[1]] - self.coor[pairs[0]]
+        phase = np.arctan2(vecs[:,1],vecs[:,0])
+                
+        # For all atom calculation phase is so far set to zero 
+        # FIXME: Calculate phase for all atom simulations
+        return phase
+    
     def set_geom_phase(self,phase):
-         for ii in range(self.Nat):
+        if phase is None:
+            phase = self._get_geom_phase()
+        
+        for ii in range(self.Nat):
             for poltype in self._polar_allowed:
                 self.polar[poltype][ii].phase += phase[ii]
         
