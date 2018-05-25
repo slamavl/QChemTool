@@ -1176,10 +1176,13 @@ class PolarizableSystem(UnitsManaged):
             int2cart_loc = int2cart[index,:]
         else:
             int2cart_loc = int2cart.copy()
-            
+        
         g_mm = np.dot(int2cart_loc.T,dR_Hmm) + np.dot(int2cart.T,dR_env_Hmm)
-        g_mm = g_mm/(np.sqrt(omega_au*omega_au*omega_au))
+        # here g_mm.shape=(N_normal_mode,1)
+        g_mm = g_mm[:,0]/(np.sqrt(omega_au*omega_au*omega_au))
+        # here g_mm.shape=(N_normal_mode,)
         g_mm = g_mm/(2*np.sqrt(RedMass_au))
+        # print("g_mm shape:",g_mm.shape)
         
         return g_mm
     

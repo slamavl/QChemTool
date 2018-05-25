@@ -1167,10 +1167,13 @@ class PolarizableSystem(UnitsManaged):
             int2cart_loc = int2cart[index,:]
         else:
             int2cart_loc = int2cart.copy()
-            
+        
         g_mm = np.dot(int2cart_loc.T,dR_Hmm) + np.dot(int2cart.T,dR_env_Hmm)
-        g_mm = g_mm/(np.sqrt(omega_au*omega_au*omega_au))
+        # here g_mm.shape=(N_normal_mode,1)
+        g_mm = g_mm[:,0]/(np.sqrt(omega_au*omega_au*omega_au))
+        # here g_mm.shape=(N_normal_mode,)
         g_mm = g_mm/(2*np.sqrt(RedMass_au))
+        # print("g_mm shape:",g_mm.shape)
         
         return g_mm
     
@@ -1567,38 +1570,6 @@ def _assign_phase(coor,Type,at_type=None):
     
     vecs = coor[pairs[1]] - coor[pairs[0]]
     phase = np.arctan2(vecs[:,1],vecs[:,0])
-#    for ii in range(20):
-#            print(ii,np.rad2deg(phase[ii]),vecs[ii])
-    
-#    norm = np.linalg.norm(vecs,axis=1)
-#    norm = np.tile(norm,(3,1))
-#    nvecs = vecs / norm.T
-#    
-#    if Type in ["plane","C","CF"]: 
-#        # calculate angle of interatom vector
-#        phase = np.arctan2(vecs[:,1],vecs[:,0])
-#        for ii in range(20):
-#            print(ii,np.rad2deg(phase[ii]),vecs[ii])
-#        
-#        for ii in range(Nat):
-#            nvec = nvecs[ii]
-#            if (np.isclose(nvec[1],0,atol=1e-7) and np.isclose(nvec[0],0,atol=1e-7)) or np.isclose(abs(nvec[2]),1.0,atol=1e-4):
-#                Phi=0.0
-#            elif np.isclose(nvec[0],0,atol=1e-3) or np.isclose(abs(nvec[1]),1.0,atol=1e-3) :
-#                if nvec[1]<0:
-#                    Phi = -np.pi/2
-#                else:
-#                    Phi = np.pi/2
-#            else:
-#                #Phi=np.arctan(nvec[1]/nvec[0])
-#                Phi=np.arctan2(nvec[1],nvec[0])
-#            
-#            Phi=np.arctan2(nvec[1],nvec[0])
-#            phase[ii] = Phi
-#            
-#            if ii<20:
-#                print(ii,np.rad2deg(Phi),nvec)
-#                print(coor[ii],coor[connected[ii][0]])
             
     # For all atom calculation phase is so far set to zero 
     # FIXME: Calculate phase for all atom simulations
@@ -1721,231 +1692,139 @@ def _get_elstat_params(charge_type):
     return FG_charges
 
 def _get_diel_params(charge_type,coarse_grain,approx,use_VinterFG,symm=False):
-    
-    AlphaE = np.zeros((3,3),dtype='f8')
-    BetaE = np.zeros((3,3),dtype='f8')
-    Alpha_E = np.zeros((3,3),dtype='f8')
-    Alpha_st = np.zeros((3,3),dtype='f8')
-    FAlphaE = np.zeros((3,3),dtype='f8')
-    FBetaE = np.zeros((3,3),dtype='f8')
-    FAlpha_E = np.zeros((3,3),dtype='f8')
-    AlphaF_st = np.zeros((3,3),dtype='f8')
-    ZeroM = np.zeros((3,3),dtype='f8')
+    # initial no polarizability
+    CF_AE_params =  [0.00000000, 0.0000000, 0.0,       0, 0.0]
+    CF_A_E_params = [0.00000000, 0.0000000, 0.0,       0, 0.0]
+    CF_BE_params =  [0.00000000, 0.0000000, 0.0,       0, 0.0]
+    CF_Ast_params = [0.00000000, 0.0000000, 0.0,       0, 0.0]
+    C_params     =  [0.00000000, 0.0000000, 0.0,       0, 0.0]
+    FC_AE_params =  [0.00000000, 0.0000000, 0.0,       0, 0.0]
+    FC_A_E_params = [0.0000000, 0.0000000, 0.0,        0, 0.0]
+    FC_BE_params =  [0.00000000, 0.0000000, 0.0,       0, 0.0]
+    FC_Ast_params = [0.0000000, 0.0000000, 0.0,        0, 0.0]
     VinterFG=0.0
     func = None
     
-    #print(coarse_grain,charge_type,use_VinterFG)
-    
     if approx==1.1 and symm:
         if coarse_grain == "plane":
+            CF_Ast_params = [2.2672980775, 0.0000000, 0.0,       0, 0.0]
             if charge_type == 'Hirshfeld':
-                AlphaE[0,0] = 6.9334582685
-                AlphaE[1,1] = AlphaE[0,0]
-                Alpha_E[0,0] = 1.23269450881
-                Alpha_E[1,1] = Alpha_E[0,0]
-                BetaE[0,0] = 0.00544878525234
-                BetaE[1,1] = BetaE[0,0]
+                CF_AE_params =  [6.93345826850, 0.0000000, 0.0, 0, 0.0]
+                CF_A_E_params = [1.23269450881, 0.0000000, 0.0, 0, 0.0]
+                CF_BE_params =  [0.00544878525, 0.0000000, 0.0, 0, 0.0]
                 VinterFG = 0.70082877
                 func = 6.67459980317
             elif charge_type == 'ESPfit':
-                AlphaE[0,0] = 7.01281780259
-                AlphaE[1,1] = AlphaE[0,0]
-                Alpha_E[0,0] = 0.525187717686
-                Alpha_E[1,1] = Alpha_E[0,0]
-                BetaE[0,0] = 0.328834053345
-                BetaE[1,1] = BetaE[0,0]
+                CF_AE_params =  [7.01281780259, 0.0000000, 0.0, 0, 0.0]
+                CF_A_E_params = [0.52518771769, 0.0000000, 0.0, 0, 0.0]
+                CF_BE_params =  [0.32883405335, 0.0000000, 0.0, 0, 0.0]
                 VinterFG = -0.23631988
-                func = None
+                func = None # FIXME: Fill correct value of deviation
         elif coarse_grain == "C":
+            CF_Ast_params = [2.2672980775, 0.0000000, 0.0,       0, 0.0]
             if charge_type == "ESPfit":
-                AlphaE[0,0] = 7.94759774636
-                AlphaE[1,1] = AlphaE[0,0]
-                AlphaE[2,2] = 3.21505490572
-                Alpha_E[0,0] = 0.254952962056
-                Alpha_E[1,1] = Alpha_E[0,0]
-                Alpha_E[2,2] = 0.95693711133
-                BetaE[0,0] = 0.256050965586
-                BetaE[1,1] = BetaE[0,0]
-                BetaE[2,2] = 0.98908237962
-                VinterFG = 0.27908823332
+                CF_AE_params =  [7.94759774636, 3.21505490572, 0.0, 0, 0.0]
+                CF_A_E_params = [0.25495296206, 0.95693711133, 0.0, 0, 0.0]
+                CF_BE_params =  [0.25605096559, 0.98908237962, 0.0, 0, 0.0]
+                VinterFG = -0.27908823332
                 func = 5.9239635569
             if charge_type == 'Hirshfeld':
-                AlphaE[0,0] = 7.55920919103
-                AlphaE[1,1] = AlphaE[0,0]
-                AlphaE[2,2] = 2.93279376194
-                Alpha_E[0,0] = 0.84652632656
-                Alpha_E[1,1] = Alpha_E[0,0]
-                Alpha_E[2,2] = 0.86248644931
-                BetaE[0,0] = 0.0085244841293
-                BetaE[1,1] = BetaE[0,0]
-                BetaE[2,2] = 1.02447353074
+                CF_AE_params =  [7.55920919103, 2.93279376194, 0.0, 0, 0.0]
+                CF_A_E_params = [0.84652632656, 0.86248644931, 0.0, 0, 0.0]
+                CF_BE_params =  [0.00852448413, 1.02447353074, 0.0, 0, 0.0]
                 VinterFG = 0.697280495448
-                func = 6.637565434920049
-                
+                func = 6.637565434920049                
     elif approx==1.1 and not symm:
         if coarse_grain == "plane":
+            CF_Ast_params = [4.55860536/2, 0.0000000, 0.17060063/2,  3, 0.0]
             if charge_type == 'Hirshfeld':
-                if not use_VinterFG:  # VinterFG = 0 (not included to fitting) (fun: 4.7181867436994045)
-                    AlphaE[0,0]=7.3041890051 
-                    AlphaE[1,1]=6.0241602626 
-                    BetaE[0,0]=0.175182978222 
-                    BetaE[1,1]= 0.103982443245 
-                    Alpha_E[0,0]=0.0442315153377 
-                    Alpha_E[1,1]=1.02933572591 
-                    VinterFG=0.0
-                    func = 4.7181867436994045
-                else: # VinterFG included to fitting  (fun: 4.682778032798102)
-                    AlphaE[0,0] = 7.478133264
-                    AlphaE[1,1] = 6.046092258
-                    BetaE[0,0] = 0.1592294
-                    BetaE[1,1] = 0.0372992 
-                    Alpha_E[0,0] = 0.01102153
-                    Alpha_E[1,1] = 1.15007728
-                    VinterFG = 0.54212481
-                    func = 4.682778032798102
-            elif charge_type == 'ESPfit':
-                if not use_VinterFG:  # VinterFG = 0 (not included to fitting) (fun: 4.146799018918191)
-                    AlphaE[0,0] = 7.53538330517 
-                    AlphaE[1,1] = 6.50272559274 
-                    BetaE[0,0] = 0.129161747387 
-                    BetaE[1,1] = 0.0704009774178
-                    Alpha_E[0,0] = 0.00737173071024
-                    Alpha_E[1,1] = 0.505521019116
+                if not use_VinterFG:  # VinterFG = 0 (not included to fitting) 
+                    CF_AE_params =  [8.15791471, 0.0000000, 2.07299595, 3, 0.0]
+                    CF_A_E_params = [2.50559497, 0.0000000, 2.04191804, 3, 0.0]
+                    CF_BE_params =  [0.96675673, 0.0000000, 0.51679070, 3, 0.0]
                     VinterFG = 0.0
-                    func = 4.146799018918191
-                else: # VinterFG included to fitting  (fun: 4.231930402706717)
-                    AlphaE[0,0] = 7.666761627 
-                    AlphaE[1,1] = 6.630444858 
-                    BetaE[0,0] = 0.29803452 
-                    BetaE[1,1] = 0.21500474 
-                    Alpha_E[0,0] = 3.42354547e-04
-                    Alpha_E[1,1] = 0.308054437
-                    VinterFG = 0.929730408
-                    func = 4.231930402706717
+                    func = 6.606123053798
+                else: # VinterFG included to fitting
+                    CF_AE_params =  [7.70098365, 0.0000000, 2.14394859, 3, 0.0]
+                    CF_A_E_params = [3.10454223, 0.0000000, 2.93917794, 3, 0.0]
+                    CF_BE_params =  [1.06489225, 0.0000000, 0.51913415, 3, 0.0]
+                    VinterFG = -1.09563763
+                    func = 6.388267496
+            elif charge_type == 'ESPfit':
+                if not use_VinterFG:  # VinterFG = 0 (not included to fitting)
+                    CF_AE_params =  [7.88583562, 0.0000000, 1.27972760, 3, 0.0]
+                    CF_A_E_params = [1.54073491, 0.0000000, 1.52053947, 3, 0.0]
+                    CF_BE_params =  [0.93222014, 0.0000000, 0.53438009, 3, 0.0]
+                    VinterFG = 0.0
+                    func = 5.8880539 
+                else: # VinterFG included to fitting
+                    CF_AE_params =  [6.53196815, 0.0000000, -0.72421438, 3, 0.0]
+                    CF_A_E_params = [0.02003485, 0.0000000, -0.98931633, 3, 0.0]
+                    CF_BE_params =  [0.51155328, 0.0000000, -2.09784577, 3, 0.0]
+                    VinterFG = -0.46517928
+                    func = 5.652823743
             elif charge_type == 'zero':
                 if not use_VinterFG: # VinterFG = 0 (not included to fitting)
-                    AlphaE[0,0] = 7.53252167197
-                    AlphaE[1,1] = 6.33607655915
-                    BetaE[0,0] = 0.0139090968952 
-                    BetaE[1,1] = 0.0247518066045 
-                    Alpha_E[0,0] = 0.00550346578145
-                    Alpha_E[1,1] = 0.765093171532
-                    VinterFG = 0.0
-                else: # VinterFG included to fitting  (fun: 4.338780983932878)
-                    AlphaE[0,0] = 7.57549868087 
-                    AlphaE[1,1] = 6.34597075543
-                    BetaE[0,0] = 0.0415620092596 
-                    BetaE[1,1] = 0.333900795923 
-                    Alpha_E[0,0] = 0.00152286902323
-                    Alpha_E[1,1] = 0.768882724257
-                    VinterFG = 0.148722203031
-                    func = 4.338780983932878
+                    Exception
+                else: # VinterFG included to fitting
+                    Exception
+            elif charge_type == 'fit':
+                if not use_VinterFG: # VinterFG = 0 (not included to fitting)
+                    Exception
+                else: # VinterFG included to fitting
+                    Exception
             else:
-                AlphaE[0,0]=7.09007854  
-                AlphaE[1,1]=5.22989017 
-                BetaE[0,0]=1.36615233 
-                BetaE[1,1]= 0.32496846 
-                Alpha_E[0,0]=0.0
-                Alpha_E[1,1]=1.67121228
-                VinterFG=0.0
-            
-            # Static polarizability / 2  (for energy shift of single chromophore alpha/2 is needed)
-            Alpha_st[0,0]=2.30828107       # 4.61656214/2
-            Alpha_st[1,1]=2.226315085      # 4.45263017/2
-        
+                Exception
         elif coarse_grain == "C":
+            CF_Ast_params = [5.17064221/2, 4.99791421, 0.25093473/2,  3, 0.0]
             if charge_type == 'ESPfit':
                 if not use_VinterFG: # VinterFG = 0 (not included to fitting)
-                    AlphaE[0,0] = 8.51210234419 
-                    AlphaE[1,1] = 7.55308163377 
-                    AlphaE[2,2] = 3.9652063838
-                    Alpha_E[0,0] = 0.210269932532 
-                    Alpha_E[1,1] = 0.498265152817 
-                    BetaE[0,0] = 0.0618634656118 
-                    BetaE[1,1] = 0.0387699553924
-                    BetaE[2,2] = 0.34996428
-                    VinterFG=0.0
-                else: # VinterFG included to fitting  (fun: 4.303720899345645)
-                    AlphaE[0,0] = 8.53950038458
-                    AlphaE[1,1] = 7.49602283181
-                    AlphaE[2,2] = 3.67719406572
-                    Alpha_E[0,0] = 0.04505067863
-                    Alpha_E[1,1] = 0.357157704568
-                    Alpha_E[2,2] = 0.486405508174
-                    BetaE[0,0] = 0.0752287116204 
-                    BetaE[1,1] = 0.119328862239
-                    BetaE[2,2] = 0.291115962688
-                    VinterFG = 1.0
-                    func = 4.303720899345645
+                    CF_AE_params =  [8.94690348, 4.50738195, 1.65097606, 3, 0.0]
+                    CF_A_E_params = [0.59003868, 2.09784509, 0.39013017, 3, 0.0]
+                    CF_BE_params =  [0.63754235, 3.98822098, 0.57543444, 3, 0.0]
+                    VinterFG = 0.0
+                    func = 5.8562260805
+                else: # VinterFG included to fitting
+                    CF_AE_params =  [5.9716021, 6.05466679, -1.86415608, 3, 0.0]
+                    CF_A_E_params = [0.34779236, 3.62066236, -1.25661047, 3, 0.0]
+                    CF_BE_params =  [1.60680201, 3.8857593, -0.77109488, 3, 0.0]
+                    VinterFG = -1.03507619
+                    func = 5.32837414129
             elif charge_type == 'Hirshfeld':
                 if not use_VinterFG: # VinterFG = 0 (not included to fitting)
-                    AlphaE[0,0] = 8.319204747
-                    AlphaE[1,1] = 6.837981516
-                    AlphaE[2,2] = 1.032203502
-                    Alpha_E[0,0] = 0.00127885831
-                    Alpha_E[1,1] = 1.17300541
-                    BetaE[0,0] = 0.149163228
-                    BetaE[1,1] = 0.000339873104
-                    BetaE[2,2] = 0.310064431  
-                    VinterFG=0.0
+                    CF_AE_params =  [8.87260399, 4.99193118, 1.55010428, 3, 0.0]
+                    CF_A_E_params = [2.44168400, 2.93594164, 2.40876587, 3, 0.0]
+                    CF_BE_params =  [0.95801324, 3.99910325, 0.52106353, 3, 0.0]
+                    VinterFG = 0.0
+                    func = 6.54313335273
                 else: # VinterFG included to fitting  (fun: 4.782278482925838)
-                    AlphaE[0,0] = 8.45537962035
-                    AlphaE[1,1] = 6.94911831601
-                    AlphaE[2,2] = 4.06507435588
-                    Alpha_E[0,0] = 0.0740550967058
-                    Alpha_E[1,1] = 1.07705615554
-                    Alpha_E[2,2] = 0.485345581054
-                    BetaE[0,0] = 0.105673114257
-                    BetaE[1,1] = 0.188114171514
-                    BetaE[2,2] = 0.00657596713326 
-                    VinterFG=0.775775109894     
-                    func = 4.782278482925838
+                    CF_AE_params =  [8.09599487, 5.09390034, 2.93035010, 3, 0.0]
+                    CF_A_E_params = [2.58941673, 2.61195361, 2.03503087, 3, 0.0]
+                    CF_BE_params =  [0.48180522, 4.99076688, -0.18182427, 3, 0.0]
+                    VinterFG = -3.21167164
+                    func = 5.88601719269
             elif charge_type == 'zero':
                 if not use_VinterFG: # VinterFG = 0 (not included to fitting)
-                    AlphaE[0,0] = 1.31648311 * 6.3
-                    AlphaE[1,1] = 1.26990778 * 5.7
-                    AlphaE[2,2] = 1.00051114 * 3.97
-                    Alpha_E[0,0] = 0.21445315
-                    Alpha_E[1,1] = 0.51064236
-                    BetaE[0,0] = 0.149163228
-                    BetaE[1,1] = 0.0625896
-                    BetaE[2,2] = 0.34996506  
-                    VinterFG=0.0
+                    Exception
                 else: # VinterFG included to fitting  (fun: 4.894367499008075) 
-                    AlphaE[0,0] = 8.5263903736
-                    AlphaE[1,1] = 7.55712544593
-                    AlphaE[2,2] = 3.96990587054
-                    Alpha_E[0,0] = 0.213862807965
-                    Alpha_E[1,1] = 0.502103795464
-                    Alpha_E[2,2] = 0.501654736106
-                    BetaE[0,0] = 0.0333263826629
-                    BetaE[1,1] = 0.259896505052
-                    BetaE[2,2] = 6.97955987078 
-                    VinterFG = 0.999766774316
-                    func = 4.894367499008075
+                    Exception
+            elif charge_type == 'fit':
+                if not use_VinterFG: # VinterFG = 0 (not included to fitting)
+                    Exception
+                else: # VinterFG included to fitting
+                    Exception
             else:
-                AlphaE[0,0]=7.9009888
-                AlphaE[1,1]=5.9624178
-                AlphaE[2,2]=3.9745420
-                BetaE[0,0]=1.3603038 
-                BetaE[1,1]= 0.3168220 
-                BetaE[2,2]= 0.3497237
-                Alpha_E[0,0]=0.0
-                Alpha_E[1,1]=1.67121228
-                VinterFG=0.0
-
-            # FIXME: This is from fitting coarse_grain="plane"            
-            # Static polarizability / 2  (for energy shift of single chromophore alpha/2 is needed)
-            Alpha_st[0,0]=2.30828107       # 4.61656214/2
-            Alpha_st[1,1]=2.226315085      # 4.45263017/2
-            
+                Exception
     else:
         raise Warning("Unknown type of approximation")
     
-    polar = { 'CF': [AlphaE,Alpha_E,BetaE,Alpha_st], 'C': [ZeroM,ZeroM,ZeroM,ZeroM]}
-    polar['FC'] = [FAlphaE,FAlpha_E,FBetaE,AlphaF_st]
-    params_polar={"VinterFG": VinterFG,"coarse_grain": coarse_grain,
-                  "polarizability": polar} 
+    polar = {'AlphaE': {"CF": CF_AE_params, "FC": FC_AE_params, "C": C_params}}
+    polar['Alpha_E'] = {"CF": CF_A_E_params, "FC": FC_A_E_params, "C": C_params}
+    polar['BetaEE'] = {"CF": CF_BE_params, "FC": FC_BE_params, "C": C_params}
+    polar['Alpha_st'] = {"CF": CF_Ast_params, "FC": FC_Ast_params, "C": C_params}
+
+    params_polar={"VinterFG": VinterFG,"coarse_grain": coarse_grain, 
+                  "polarizability": polar,"approximation": approx,'func': func}     
     return params_polar
     
 
