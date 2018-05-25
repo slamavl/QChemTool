@@ -133,12 +133,12 @@ class SpectralDensity(DFunction, UnitsManaged):
     True
     """
 
-    energy_params = ("reorg", "omega", "freq")
+    energy_params = ("reorg", "omega", "freq", "sheer")
     analytical_types = ("OverdampedBrownian")
 
     def __init__(self, axis=None, params=None, values=None):
         super().__init__()
-
+        
         if (axis is not None) and (params is not None):
             
             if isinstance(axis, TimeAxis):
@@ -209,7 +209,7 @@ class SpectralDensity(DFunction, UnitsManaged):
                     for key in params.keys():
                         if key in self.energy_params:
                             prms[key] = \
-                            self.convert_energy_2_internal_u(params[key])
+                            self.convert_frequency_2_internal_u(params[key])
                         else:
                             prms[key] = params[key]
                         
@@ -232,6 +232,9 @@ class SpectralDensity(DFunction, UnitsManaged):
                 elif ftype == "Value-defined":
         
                     self._make_value_defined(prms, values=vals)
+                
+                elif ftype == "DiscreteModes":
+                    self._make_discrete_modes(prms)
         
                 else:
                     raise Exception("Unknown correlation function type or"+
@@ -310,9 +313,9 @@ class SpectralDensity(DFunction, UnitsManaged):
             omega = self.axis.data
             cfce  = numpy.zeros(self.axis.length,dtype='f8')
             for xi in range(len(omegas)):
-                cfce += gs[xi]*( 
+                cfce += gs[xi]*gs[xi]*( 
                 numpy.exp( -(omega-omegas[xi])*(omega-omegas[xi])/sigma**2 )
-                -numpy.exp( -(omega+omegas[xi])*(omega-omegas[xi])/sigma**2 ) 
+                -numpy.exp( -(omega+omegas[xi])*(omega+omegas[xi])/sigma**2 ) 
                 )
             
             # FIXME for large omegas might be numerically unstable
@@ -464,7 +467,7 @@ class SpectralDensity(DFunction, UnitsManaged):
     def get_reorganization_energy(self):
         """Returns the reorganization energy of the cspectral density
         """
-        return self.convert_energy_2_current_u(self.lamb)
+        return self.convert_frequency_2_current_u(self.lamb)
 
     def measure_reorganization_energy(self):
         """Calculates the reorganization energy of the spectral density
