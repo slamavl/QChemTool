@@ -87,11 +87,10 @@ def rsmd(coor1,coor2):
     res=numpy.sqrt(res)
     return res
 
-def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=False,output_RSMD=False):
+def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test,onlyC=False,output_RSMD=False,print_angles=False):
     from .positioningTools import AlignMolecules
         
-    
-    Coor_alligned=AlignMolecules(struc.coor._value,struc_test.coor._value,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test)
+    Coor_alligned,Phi,Psi,Chi,center=AlignMolecules(struc.coor._value,struc_test.coor._value,indx_center1,indx_x1,indx_y1,indx_center_test,indx_x_test,indx_y_test, print_angles=True)
     # Toto by melo posunout optimalizovanou molekulu do pozice te na fluorofrafenu
     
     # By comparison distance between same atomic types we can guess correspondding atoms
@@ -141,7 +140,10 @@ def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_
         index1 = []
         RSMD = 1.0e4
         if output_RSMD:
-            return index1, RSMD
+            if print_angles:
+                return index1, RSMD,Phi,Psi,Chi,center
+            else:
+                return index1, RSMD
         else:
             return index1
         
@@ -150,12 +152,53 @@ def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_
         Coor_test = numpy.array(Coor_test,dtype='f8')
         # calculate rsmd(coor1,coor2) between two molecules
         RSMD = rsmd(Coor_alligned,Coor_test)
-        return index1, RSMD
+        if print_angles:
+            return index1, RSMD,Phi,Psi,Chi,center
+        else:
+            return index1, RSMD
     else:
         return index1
 
-def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=False):
+def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=False,**kwargs):
+    """ Create oscillator representation of molecule
+    
+    Parameters:
+    -----------
+        rr : numpy array of real (dimension Nat x 3)
+        bond : list of integers (dimension Nbonds x 2)
+        factor : numpy array of real (dimension Nbonds)
+            Scaling of elementary dipoles to have different dipoles for different
+            atom types (elemetary dipole = normalized dipoele in direction of 
+            the atomic bond * factor)
+        NMN :
+        TrDip : 
+        centered : string
+            If ``centered='Bonds'`` elemetary dipoles will be centered in the 
+            center of the atomic bonds (correct way). Centering dipoles on 
+            individual atoms ``centered='Atoms'`` is not yet supported and it
+            seems to be also incorrect.
+        nearest_neighbour : Logical
+            If ``nearest_neighbour=True`` only interaction between closest dipoles
+            is allowed (within the radius of 4.0 Bohrs). Interaction between all
+            dipoles is included when  ``nearest_neighbour=False``
+        kwargs : dictionary (optional)
+            It can be used as to set value of interaction energy between elementary
+            dipoles by ``kwargs['ForceCoupling'] = coupling_value_in_AU``. Sign 
+            of the interaction energy between two dipoles is set to sign of 
+            a scalar product of two elementary dipoles.
+    
+    Returns:
+    ---------
+    ro : numpy array of real (dimension Nbonds x 3)
+        Coordinates of dipoles in ATOMIC UNITS
+    do : numpy array of real (dimension Nbonds x 3)
+        Dipoles of chosen normal mode normalized to total transition dipole in
+        ATOMIC UNITS.
+    
+    """
+    
     from .interaction import dipole_dipole 
+    force_coupling = False
     cutoff_dist=4.0
     TrDip_norm=numpy.linalg.norm(TrDip)
     
@@ -176,16 +219,25 @@ def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=
     else:
          raise IOError("Unknown type of dipole centering. Alowed types are: 'Bonds' or 'Atoms'.")
     
+    if "ForceCoupling" in kwargs:
+        force_coupling = True
+        coupling = kwargs["ForceCoupling"] # interaction energy between neighboring dipoles in AU
     
     # Calculate dipole-dipole interaction energy between all dipoles
     hh=numpy.zeros((Ndip,Ndip),dtype='f8')
     for ii in range(Ndip):
         for jj in range(ii+1,Ndip):
             if nearest_neighbour:
-                dr=numpy.linalg.norm(ro[ii,:]-ro[jj,:])
-                if dr<=cutoff_dist:
-                    hh[ii,jj]=dipole_dipole(ro[ii,:],do[ii,:],ro[jj,:],do[jj,:])
-                    hh[jj,ii]=hh[ii,jj]
+                if force_coupling:
+                    dr=numpy.linalg.norm(ro[ii,:]-ro[jj,:])
+                    if dr<=cutoff_dist:
+                        hh[ii,jj]=coupling * numpy.sign(numpy.dot(do[ii,:],do[jj,:]))
+                        hh[jj,ii]=hh[ii,jj]
+                else:
+                    dr=numpy.linalg.norm(ro[ii,:]-ro[jj,:])
+                    if dr<=cutoff_dist:
+                        hh[ii,jj]=dipole_dipole(ro[ii,:],do[ii,:],ro[jj,:],do[jj,:])
+                        hh[jj,ii]=hh[ii,jj]
             else:
                 hh[ii,jj]=dipole_dipole(ro[ii,:],do[ii,:],ro[jj,:],do[jj,:])
                 hh[jj,ii]=hh[ii,jj]
