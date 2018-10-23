@@ -16,7 +16,7 @@ system = "2perylene" # "anthanthrene", "perylene", "2perylene"
 if not parameters_type_manual: # Automatic definition of parameters
     # Set parameters of the system
     FG_charges = "ESPfit"
-    params_polar={"VinterFG": False,"coarse_grain": "plane", "charge_type": FG_charges,"approximation": 1.1,"symm": False} 
+    params_polar={"VinterFG": True,"coarse_grain": "plane", "charge_type": FG_charges,"approximation": 1.1,"symm": True} 
     
     # Load FG structure
     struc = Structure()

@@ -13,9 +13,6 @@ from QChemTool.Spectroscopy.spectraldensity import SpectralDensity
 from QChemTool import FrequencyAxis
 from QChemTool.General.UnitsManager import frequency_units
 
-ElstatType='Hirshfeld'
-
-
 DIR = "C:/PhD/Ab-initio-META/Fluorographane/Freq"
 filename_fchk = "".join([DIR,"/FGrph_perylene_symm_9x6_opt_freq.fchk"])
 filename_log = "".join([DIR,"/FGrph_perylene_symm_9x6_opt_freq.log"])
