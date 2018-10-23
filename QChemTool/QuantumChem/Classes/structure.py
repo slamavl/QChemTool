@@ -86,6 +86,10 @@ class Structure(PositionUnitsManaged):
         The same as add_atom but it can handle also arrays (more atoms at once)
     get_com :
         Outputs center of mass in Coordinate class
+    get_angle :
+        Calculate angle between atoms specified by indexes
+    get_dihedral :
+        Calculate dihedral angle between atoms specified by indexes
     move :
         Moves the whole structure along specified vector
     rotate :
@@ -384,6 +388,64 @@ class Structure(PositionUnitsManaged):
         self.rotate(Phi,Psi,Chi)
         
         return Phi,Psi,Chi,center
+
+    def get_angle(self,indx,typ='rad'):
+        ''' Fluction calculate angle between specified atoms. 
+        
+        Parameters
+        ----------
+        indx : list of integers (dimension 3)
+            Indexes of atom between which angle is calculated. ``indx[1]``
+            corresponds to center atom
+        type : str ('rad' - default,'deg')
+            If output angle in radians or in degrees
+    
+        Returns
+        ----------
+        angle : real
+        
+        '''
+        
+        if len(indx)!=3:
+            raise Exception
+        
+        r1 = self.coor._value[indx[0]] - self.coor._value[indx[1]]
+        r2 = self.coor._value[indx[2]] - self.coor._value[indx[1]]
+        angle = np.arccos(np.dot(r1,r2)/np.linalg.norm(r1)/np.linalg.norm(r2))
+        if typ=='deg':
+            angle = np.rad2deg(angle)
+        return angle
+
+    def get_dihedral(self,indx,typ='rad'):
+        ''' Fluction calculate dihedral angle between specified atoms. 
+        
+        Parameters
+        ----------
+        indx : list of integers (dimension 4)
+            Indexes of atom between which angle is calculated.
+        type : str ('rad' - default,'deg')
+            If output angle in radians or in degrees
+    
+        Returns
+        ----------
+        angle : real
+        
+        '''
+        
+        if len(indx)!=4:
+            raise Exception
+        
+        r11 = self.coor._value[indx[0]] - self.coor._value[indx[1]]
+        r12 = self.coor._value[indx[2]] - self.coor._value[indx[1]]
+        r1 = np.cross(r11,r12)
+        r21 = self.coor._value[indx[1]] - self.coor._value[indx[2]]
+        r22 = self.coor._value[indx[3]] - self.coor._value[indx[2]]
+        r2 = np.cross(r21,r22)
+        angle = np.arccos(np.dot(r1,r2)/np.linalg.norm(r1)/np.linalg.norm(r2))
+    
+        if typ=='deg':
+            angle = np.rad2deg(angle)
+        return angle
         
     def guess_bonds(self,bond_length=None):
         ''' Function guesses pairs of atoms between which bond might occure.
@@ -1228,7 +1290,7 @@ class Structure(PositionUnitsManaged):
                     self.add_coor(VecH,[At_type]*nH,ncharge=None,mass=None)
     
 
-    def get_Huckel_molecule(self,nvec,At_list=None,Type='Gaussian_STO3G',overlap_scaled=True,add_excit=True,**kwargs):
+    def get_Huckel_molecule(self,nvec,At_list=None,Type='Gaussian_STO3G',overlap_scaled=True,overlap=None,add_excit=True,**kwargs):
         """ Create Huckel representation of the structure
         
         Parameters
@@ -1245,6 +1307,8 @@ class Structure(PositionUnitsManaged):
             If ``overlap_scaled=True`` interaction between atoms is scaled by 
             overlap of corresponding atomic orbitals. Otherwise the same 
             interaction energy will be used for all atoms of same type
+        overlap : numpy array (dimension 3xNat - optional init = None)
+            External definition of overlap matrix between p molecular orbitals
         add_excit : logical (optional init = True)
             If ``add_excit=True`` HOMO-LUMO transition will be added as first 
             excited state.
@@ -1308,7 +1372,11 @@ class Structure(PositionUnitsManaged):
                         typ="".join([ii,jj])
                         Interaction_p[typ]=-1.864456    # in Hartree
             else:
-                raise IOError('Calculation without scaling the interaction by overlap is not yet implemented')
+                for ii in Energy_p:
+                    for jj in Energy_p:
+                        typ="".join([ii,jj])
+                        Interaction_p[typ]=-0.1   # in Hartree
+                #raise IOError('Calculation without scaling the interaction by overlap is not yet implemented')
         
                         
 
@@ -1333,7 +1401,13 @@ class Structure(PositionUnitsManaged):
                 Huckel_mol.ao.add_orbital(coeffs,exps,coor,orbit_type,atom_indx,atom_type)
         
         # contraction of orbital overlap from 3 orbitals for px, py, pz into one p orbital in direction of nvec
-        Huckel_mol.ao.get_overlap()
+        if overlap is None:
+            Huckel_mol.ao.get_overlap()
+        else:
+            if np.ndim(overlap)!=2 or len(overlap)!=3*Huckel_mol.struc.nat:
+                raise IOError("Overlap matrix must have dimension 3Nat x 3Nat")
+            Huckel_mol.ao.overlap = overlap.copy()
+            
         nvec=np.array(nvec)/np.linalg.norm(nvec)
         ContM=np.zeros((Huckel_mol.struc.nat,Huckel_mol.ao.nao_orient),dtype='f8')
         for ii in range(Huckel_mol.struc.nat):
@@ -1346,10 +1420,21 @@ class Structure(PositionUnitsManaged):
         for ii in range(Huckel_mol.struc.nat):
             atom_type=Huckel_mol.struc.at_type[ii]
             HH[ii,ii]=Energy_p[atom_type]
-            for jj in range(ii+1,Huckel_mol.struc.nat):
-                inter_type="".join([atom_type,Huckel_mol.struc.at_type[jj]])
-                HH[ii,jj]=Interaction_p[inter_type]*SS[ii,jj]
-                HH[jj,ii]=HH[ii,jj]
+            if overlap_scaled:
+                for jj in range(ii+1,Huckel_mol.struc.nat):
+                    inter_type="".join([atom_type,Huckel_mol.struc.at_type[jj]])
+                    HH[ii,jj]=Interaction_p[inter_type]*SS[ii,jj]
+                    HH[jj,ii]=HH[ii,jj]
+        if not overlap_scaled:
+            if Huckel_mol.struc.bonds is None:
+                Huckel_mol.guess_bonds()
+            for bond in Huckel_mol.struc.bonds:
+                inter_type="".join([Huckel_mol.struc.at_type[bond[0]],Huckel_mol.struc.at_type[bond[1]]])
+                HH[bond[0],bond[1]] = Interaction_p[inter_type]
+                HH[bond[1],bond[0]] = HH[bond[0],bond[1]] 
+        
+#        print(HH)
+                
         eng,vec=scipy.linalg.eigh(HH,SS)    # energies in vector and eigenvectors in columns
         
         # expand single p orbital expansioon coefficients into px, py, pz
@@ -1440,6 +1525,7 @@ class Structure(PositionUnitsManaged):
         # Elementary dipole size is dependent on atom types (dipole in center of N-C bond should be 
         # different than dipole in center of C-C and also in centrer N-N). So far all dipoles are the 
         # same for all atom types. This should be changed and be dependent on AtType
+        # TODO: Change elemetrary dipole size to be dependent on atom types
         if scale_by_overlap:
             from ..qch_functions import dipole_STO
             
@@ -1474,7 +1560,7 @@ class Structure(PositionUnitsManaged):
             for ii in range(len(TrDip)):
                 ro_tmp, do_tmp = molecule_osc_3D(struc1.coor._value,struc1.bonds,
                                                factor1,NMN[ii],TrDip[ii],
-                                               centered,nearest_neighbour,verbose=verbose)
+                                               centered,nearest_neighbour,verbose=verbose,**kwargs)
                 ro1=np.copy(ro_tmp)
                 do1+=Coef[ii]*do_tmp
             # normalize total dipole
@@ -1482,26 +1568,28 @@ class Structure(PositionUnitsManaged):
             norm=np.sqrt(np.dot(Dip,Dip))
             do1=do1*DipoleSize/norm
         else:
+            # Calculate normal modes and output position and dipoles normalized to TrDip
             ro1, do1 = molecule_osc_3D(struc1.coor._value,struc1.bonds,factor1,NMN,
-                                    TrDip,centered,nearest_neighbour,verbose=verbose)
+                                    TrDip,centered,nearest_neighbour,verbose=verbose,**kwargs)
         
         dipole1=np.sum(do1,0)
         if verbose:
             print('TotalDip1:',dipole1)
         
-        struc_oscilator=Structure()
+        # Output oscillator representation as structure class
+        struc_oscillator=Structure()
         with position_units('Bohr'):
-            struc_oscilator.coor=Coordinate(ro1)
-        struc_oscilator.tr_dip=do1
-        struc_oscilator.nat=Ndip1
-        struc_oscilator.name="".join([self.name,' 3D oscillator representation'])
-        for ii in range(struc_oscilator.nat):
-            struc_oscilator.at_type="".join([struc1.at_type[bond1[ii][0]],struc1.at_type[bond1[ii][1]]])                        
-        struc_oscilator.tr_char=np.zeros(Ndip1,dtype='f8')
-        struc_oscilator.tr_quadr2=np.zeros(Ndip1,dtype='f8')
-        struc_oscilator.tr_quadrR2=np.zeros((6,Ndip1),dtype='f8')
+            struc_oscillator.coor=Coordinate(ro1)
+        struc_oscillator.tr_dip=do1
+        struc_oscillator.nat=Ndip1
+        struc_oscillator.name="".join([self.name,' 3D oscillator representation'])
+        for ii in range(struc_oscillator.nat):
+            struc_oscillator.at_type="".join([struc1.at_type[bond1[ii][0]],struc1.at_type[bond1[ii][1]]])                        
+        struc_oscillator.tr_char=np.zeros(Ndip1,dtype='f8')
+        struc_oscillator.tr_quadr2=np.zeros(Ndip1,dtype='f8')
+        struc_oscillator.tr_quadrR2=np.zeros((6,Ndip1),dtype='f8')
         
-        return struc_oscilator
+        return struc_oscillator
 
 VdW_radius={'ca': 1.9080,'f': 1.75,'h1': 1.3870,'h2': 1.2870,'h3': 1.4090,
             'h4': 1.4090,'h5': 1.3590,'ha': 1.4590,'hc':1.4870,'hn': 0.6000,'ho': 0.0000,
