@@ -54,7 +54,7 @@ class PolarAtom:
         
         self.per = per
         self.phase = phase
-        self.polz = polz
+        self.polz = abs(polz)
     
     def _polarizability4angle(self,angle):
         phi = angle - self.phase
@@ -64,22 +64,6 @@ class PolarAtom:
     
     def get_polarizability4elf(self,E):
         Phi=np.arctan2(E[1],E[0])
-        
-#        norm = np.linalg.norm(E)
-#        if abs(norm) < 1e-8:
-#            return np.zeros(3)
-#        else:
-#            nvec = E / np.linalg.norm(E)
-#        # determine angle phi (between x axis and projection of electric field to xy plane)
-#        if (np.isclose(nvec[1],0,atol=1e-7) and np.isclose(nvec[0],0,atol=1e-7)) or np.isclose(abs(nvec[2]),1.0,atol=1e-4):
-#            Phi=0.0
-#        elif np.isclose(nvec[0],0,atol=1e-4):
-#            if nvec[1]<0:
-#                Phi = -np.pi/2
-#            else:
-#                Phi = np.pi/2
-#        else:
-#            Phi=np.arctan(nvec[1]/nvec[0])
         
         # calculate polarizability for the angle
         polar = self._polarizability4angle(Phi)
@@ -123,12 +107,13 @@ class Dielectric:
         self.polar['Alpha_E'] = []
         self.polar['BetaEE'] = []
         self.polar['Alpha_st'] = []
+        self.polar['Alpha_dyn'] = []
         try:
             self.VinterFG = polar_param["VinterFG"]
         except:
             self.VinterFG = 0.0
         self.assign_polar(polar_param["polarizability"])
-        self._polar_allowed = ['AlphaE','Alpha_E','BetaEE','Alpha_st']
+        self._polar_allowed = ['AlphaE','Alpha_E','BetaEE','Alpha_st','Alpha_dyn']
         # AlphaE,Alpha_E,Alpha_st,BetaEE,V,CoarseGrain=None
         #if 'AlphaE' in polar_param:
         #self.polar['AlphaE']=AlphaE
@@ -179,9 +164,59 @@ class Dielectric:
                 except:
                     polarizable_atom = PolarAtom(0.0,0.0,0,0.0) 
                 self.polar[poltype].append(polarizable_atom)
+        
+        for ii in range(self.Nat):
+            at_type = self.at_type[ii]
+            poltype = 'Alpha_dyn'
+            
+            try: # For specified atom types assign polarizability, for others zero polarizability
+                at_prmsE = params['AlphaE'][at_type]
+                at_prms_E = params['Alpha_E'][at_type]
+                polxy = (at_prmsE[0] + at_prms_E[0])/2
+                polz = (at_prmsE[1] + at_prms_E[1])/2
+                amp = (at_prmsE[2] + at_prms_E[2])/2
+                per = at_prmsE[3]
+                try:
+                    phase = at_prmsE[4]
+                except:
+                    phase = 0.0
+                polarizable_atom = PolarAtom(polxy,amp,per,polz,phase=phase) 
+            except:
+                polarizable_atom = PolarAtom(0.0,0.0,0,0.0) 
+            self.polar[poltype].append(polarizable_atom)
+    
+    def _get_geom_phase(self):
+        from ..QuantumChem.calc import GuessBonds
+        
+        Nat = self.Nat
+        phase = np.zeros(Nat,dtype="f8")
+        bonds = GuessBonds(self.coor,bond_length=4.0)
+        connected = []
+        for ii in range(Nat):
+            connected.append([])
+        
+        for ii in range(len(bonds)):
+            atom1 = bonds[ii][0]
+            atom2 = bonds[ii][1]
+            connected[atom1].append(atom2)
+            connected[atom2].append(atom1)
+        
+        pairs = np.zeros((2,Nat),dtype='i8')
+        for ii in range(Nat):
+            pairs[:,ii] = [ii,connected[ii][0]] 
+        
+        vecs = self.coor[pairs[1]] - self.coor[pairs[0]]
+        phase = np.arctan2(vecs[:,1],vecs[:,0])
+                
+        # For all atom calculation phase is so far set to zero 
+        # FIXME: Calculate phase for all atom simulations
+        return phase
     
     def set_geom_phase(self,phase):
-         for ii in range(self.Nat):
+        if phase is None:
+            phase = self._get_geom_phase()
+        
+        for ii in range(self.Nat):
             for poltype in self._polar_allowed:
                 self.polar[poltype][ii].phase += phase[ii]
         
@@ -195,7 +230,13 @@ class Dielectric:
             induced_dipole[ii,:] = polatom.get_induced_dipole(ElField[ii])
         
         return induced_dipole
-        
+    
+    def rescale_polarizabilities(self,poltype,scaling):
+        for ii in range(self.Nat):
+            polatom = self.polar[poltype][ii]
+            polatom.polxy = polatom.polxy * scaling
+            polatom.amp = polatom.amp * scaling
+            polatom.polz = polatom.polz * scaling
     
     def _assign_polar(self,**kwargs):
         
@@ -394,7 +435,7 @@ class Dielectric:
             print('Dipole sum:',np.sum(self.dipole,axis=0))
     
 # TODO: Add possibility for NN = -err to calculate dipoles until convergence is reached
-    def _calc_dipoles_All(self,typ,Estatic=np.zeros(3,dtype='f8'),NN=60,eps=1,debug=False):
+    def _calc_dipoles_All(self,typ,Estatic=np.zeros(3,dtype='f8'),NN=60,eps=1,addition=False,debug=False,nearest_neighbor=True):
         ''' Function for calculation induced dipoles of SCF procedure for interaction
         of molecule with environment. It calculates induced dipoles on individual
         atoms by static charge distribution and homogeneous electric field.
@@ -418,15 +459,6 @@ class Dielectric:
         if debug:
             import timeit
             time0 = timeit.default_timer()
-        #R=np.zeros((self.Nat,self.Nat,3),dtype='f8') # mutual distance vectors
-        #P=np.zeros((self.Nat,self.Nat,3),dtype='f8')
-        #for ii in range(self.Nat):
-        #    for jj in range(ii+1,self.Nat):
-        #        R[ii,jj,:]=self.coor[ii]-self.coor[jj]
-        #        R[jj,ii,:]=-R[ii,jj,:]
-        #if debug:
-        #    time01 = timeit.default_timer()
-        #RR=np.sqrt(np.power(R[:,:,0],2)+np.power(R[:,:,1],2)+np.power(R[:,:,2],2))  # mutual distances
         R = np.tile(self.coor,(self.Nat,1,1))
         R = (np.swapaxes(R,0,1) - R)
         RR=squareform(pdist(self.coor))
@@ -463,7 +495,14 @@ class Dielectric:
         MASK=np.tile(MASK,(3,1,1))   # np.shape(mask)=(3,N,N) True all indexes where are both non-zero charges 
         MASK=np.rollaxis(MASK,0,3)
         
+        
+        
         MASK2=np.diag(np.ones(self.Nat,dtype='bool'))
+        if not nearest_neighbor:
+            bonds = GuessBonds(self.coor)
+            for nn in bonds:
+                MASK2[nn[0],nn[1]]=True
+                MASK2[nn[1],nn[0]]=True
         MASK2=np.tile(MASK2,(3,1,1))
         MASK2=np.rollaxis(MASK2,0,3)
         
@@ -478,8 +517,11 @@ class Dielectric:
 
         for kk in range(NN):
             # point charge electric field
-            ELF=(Q/RR3)*np.rollaxis(R,2)
-            ELF=np.rollaxis(ELF,0,3)
+            if addition:
+                ELF = np.zeros((self.Nat,self.Nat,3))
+            else:
+                ELF=(Q/RR3)*np.rollaxis(R,2)
+                ELF=np.rollaxis(ELF,0,3)
             #for jj in range(3):
             #    ELF[:,:,jj]=(Q/RR3)*R[:,:,jj]   # ELF[i,j,:]  is electric field at position i generated by atom j - on diagonal there are zeros 
 
@@ -505,7 +547,10 @@ class Dielectric:
 # TODO: Think if this could be done in some efficient way
             #for ii in range(self.Nat):
                 # self.dipole[ii,:]=np.dot(self.polar[typ][ii],elf[ii]+Estatic)
-            self.dipole = self.get_induced_dipoles(elf + np.tile(Estatic,(self.Nat,1)),typ)
+            if addition:
+                self.dipole += self.get_induced_dipoles(elf + np.tile(Estatic,(self.Nat,1)),typ)
+            else:
+                self.dipole = self.get_induced_dipoles(elf + np.tile(Estatic,(self.Nat,1)),typ)
             if debug:
                 print('Dipole sum:',np.sum(self.dipole,axis=0))
         if debug:
@@ -687,7 +732,12 @@ class Dielectric:
         
         # Polarization by molecule B
         self.charge[defA_indx]=0.0
-        self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
+        if '+' in typ and order==2:
+            typ_arr = typ.split('+')
+            self._calc_dipoles_All(typ_arr[0],NN=1,eps=1,debug=False)
+            self._calc_dipoles_All(typ_arr[1],NN=1,eps=1,debug=False,addition=True)
+        else: 
+            self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
         dipolesB=np.sum(self.dipole,axis=0)   # induced dipoles by second defect (defect B) 
         self.charge[defA_indx]=defA_charge
         PolMAT[1,1] = self._get_interaction_energy(defB_indx,charge=defB_charge,debug=False) - E_TrEsp
@@ -698,7 +748,13 @@ class Dielectric:
         
         # Polarization by molecule A
         self.charge[defB_indx]=0.0
-        self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
+        if '+' in typ and order==2:
+            typ_arr = typ.split('+')
+            self._calc_dipoles_All(typ_arr[0],NN=1,eps=1,debug=False)
+            self._calc_dipoles_All(typ_arr[1],NN=1,eps=1,debug=False,addition=True)
+        else: 
+            self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
+        #self._calc_dipoles_All(typ,NN=order,eps=1,debug=False)
         dipolesA=np.sum(self.dipole,axis=0)
         self.charge[defB_indx]=defB_charge
         PolMAT[0,0] = self._get_interaction_energy(defA_indx,charge=defA_charge,debug=False) - E_TrEsp
@@ -711,9 +767,9 @@ class Dielectric:
         dipoles_polA = self.dipole.copy()
         self.dipole=np.zeros((self.Nat,3),dtype='f8')
         
-        if typ=='AlphaE' or typ=='BetaEE' or typ=='Alpha_st':
+        if typ=='AlphaE' or typ=='BetaEE' or typ=='Alpha_st' or typ=='AlphaE+Alpha_st':
             return PolMAT,dipolesA,dipolesB,dipoles_polA,dipoles_polB
-        elif typ=='Alpha_E':
+        elif typ=='Alpha_E' or typ=='Alpha_E+Alpha_st':
             PolMAT[[0,1],[0,1]] = PolMAT[[1,0],[1,0]]   # Swap AlphaMAT[0,0] with AlphaMAT[1,1]
             return PolMAT,dipolesA,dipolesB,dipoles_polA,dipoles_polB
     

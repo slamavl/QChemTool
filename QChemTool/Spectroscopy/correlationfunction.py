@@ -143,6 +143,7 @@ class CorrelationFunction(DFunction, UnitsManaged):
     allowed_types = ("OverdampedBrownian-HighTemperature",
                      "OverdampedBrownian", 
                      "UnderdampedBrownian",
+                     "DiscreteModes",
                      "Value-defined")
 
     analytical_types = ("OverdampedBrownian-HighTemperature",

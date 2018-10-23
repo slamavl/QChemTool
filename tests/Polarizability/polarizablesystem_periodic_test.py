@@ -10,13 +10,13 @@ from QChemTool import energy_units
 from QChemTool.QuantumChem.Fluorographene.fluorographene import orientFG
 import numpy as np
 
-parameters_type_manual = True
+parameters_type_manual = False
 system = "2perylene" # "anthanthrene", "perylene", "2perylene"
 
 if not parameters_type_manual: # Automatic definition of parameters
     # Set parameters of the system
     FG_charges = "ESPfit"
-    params_polar={"VinterFG": False,"coarse_grain": "plane", "charge_type": FG_charges,"approximation": 1.1} 
+    params_polar={"VinterFG": True,"coarse_grain": "plane", "charge_type": FG_charges,"approximation": 1.1, "symm": True} 
     
     # Load FG structure
     struc = Structure()
@@ -81,23 +81,29 @@ else:
     # manual definition
     #------------------------------------------------------------------------------
     #                 polxy       polz      amp     per  phase
-    CF_AE_params = [7.53538330517, 0.0000, 1.0326577124,   2, 0.0]
-    CF_A_E_params = [0.505521019116, 0.000000, 0.4981493,  2, np.pi/2]
-    CF_BE_params = [0.129161747387, 0.0000, 0.05876077,    2, 0.0]
-    CF_Ast_params = [2.30828107, 0.0000000, 0.08196599,    2, 0.0] #[2.30828107, 0.00000, 0.081966, 2]
+#    CF_AE_params = [7.53538330517, 0.0000, 1.0326577124,   2, 0.0]
+#    CF_A_E_params = [0.505521019116, 0.000000, 0.4981493,  2, np.pi/2]
+#    CF_BE_params = [0.129161747387, 0.0000, 0.05876077,    2, 0.0]
+#    CF_Ast_params = [2.30828107, 0.0000000, 0.08196599,    2, 0.0] #[2.30828107, 0.00000, 0.081966, 2]
+    
+    CF_AE_params =  [8.94690348, 4.50738195, 1.65097606, 3, 0.0]
+    CF_A_E_params = [0.39013017, 2.09784509, 0.59003868, 3, 0.0]
+    CF_BE_params =  [0.57543444, 3.98822098, 0.63754235, 3, 0.0]
+    CF_Ast_params = [5.17064221/2, 4.99791421/2, 0.25093473/2,  3, 0.0] 
+    VinterFG = 0.0
+    
     C_params     = [0.00000000, 0.0000000, 0.0,       0, 0.0]
     FC_AE_params = [0.00000000, 0.0000000, 0.0,       0, 0.0]
     FC_A_E_params = [0.0000000, 0.0000000, 0.0,       0, 0.0]
     FC_BE_params = [0.00000000, 0.0000000, 0.0,       0, 0.0]
     FC_Ast_params = [0.0000000, 0.0000000, 0.0,       0, 0.0]
-
     
     polar = {'AlphaE': {"CF": CF_AE_params, "FC": FC_AE_params, "C": C_params}}
     polar['Alpha_E'] = {"CF": CF_A_E_params, "FC": FC_A_E_params, "C": C_params}
     polar['BetaEE'] = {"CF": CF_BE_params, "FC": FC_BE_params, "C": C_params}
     polar['Alpha_st'] = {"CF": CF_Ast_params, "FC": FC_Ast_params, "C": C_params}
 
-    params_polar={"VinterFG": 0.0,"coarse_grain": "plane", "polarizability": polar,"approximation": 1.1}     
+    params_polar={"VinterFG": 0.0,"coarse_grain": "C", "polarizability": polar,"approximation": 1.1}     
     
     # Load FG structure
     struc = Structure()
@@ -124,40 +130,8 @@ else:
     params = {"energy_type": "QC","permivity": 1.0,"order": 2}
     system = PolarizableSystem(diel = diel, elstat = elstat, params = params)
     
-    Elfield=np.array([1.0,0.0,0.0])
-    Elfield = np.tile(Elfield,(system.diel.Nat,1))
-    nn=170
-    induced_dipoles = system.diel.get_induced_dipoles(Elfield,"AlphaE")
-    print(induced_dipoles[nn])
-    induced_dipoles = system.diel.get_induced_dipoles(Elfield,"Alpha_E")
-    print(induced_dipoles[nn])
-    induced_dipoles = system.diel.get_induced_dipoles(Elfield,"BetaEE")
-    print(induced_dipoles[nn])
-    induced_dipoles = system.diel.get_induced_dipoles(Elfield,"Alpha_st")
-    print(induced_dipoles[nn])
-    Elfield=np.array([0.0,1.0,0.0])
-    induced_dipoles = system.diel.polar["AlphaE"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    induced_dipoles = system.diel.polar["Alpha_E"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    induced_dipoles = system.diel.polar["BetaEE"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    induced_dipoles = system.diel.polar["Alpha_st"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    Elfield=np.array([1.0,1.0,0.0])
-    induced_dipoles = system.diel.polar["AlphaE"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    induced_dipoles = system.diel.polar["Alpha_E"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    induced_dipoles = system.diel.polar["BetaEE"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    induced_dipoles = system.diel.polar["Alpha_st"][nn].get_induced_dipole(Elfield)
-    print(induced_dipoles)
-    
     # identify defects - separated because now changes can be made to the database
     system.identify_defects()
-    print(system.defects[0].index)
-    print(system.defects[1].index)
     
     # Calculate energies in the system
     Ndef = len(system.defects)
