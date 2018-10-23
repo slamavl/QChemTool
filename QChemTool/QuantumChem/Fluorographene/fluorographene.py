@@ -312,9 +312,13 @@ def create_AMBER_frcmod(filename,**kwargs):
         f.write("cb-fb    {:8.4f}    {:8.6f}     Same as c3-f (for initial guess)\n".format( param['cb-fb'][0], param['cb-fb'][1] ))
         f.write("cb-c3    {:8.4f}   {:8.6f}     Same as c3-c3 (for initial guess)\n".format( param['cb-c3'][0], param['cb-c3'][1] ))
         f.write("c3-c3    {:8.4f}    {:8.6f}     Same as c3-c3 (for initial guess)\n".format( param['c3-c3'][0], param['c3-c3'][1] ))
+        f.write("ca-ca    {:8.4f}    {:8.6f}     Same as c3-c3 (for initial guess)\n".format( param['ca-ca'][0], param['ca-ca'][1] ))
+        f.write("ca-c3    {:8.4f}    {:8.6f}     Same as c3-c3 (for initial guess)\n".format( param['ca-c3'][0], param['ca-c3'][1] ))
         f.write("c3-f     {:8.4f}   {:8.6f}     Same as c3-f (for initial guess)\n".format(  param['c3-f'][0], param['c3-f'][1] ))
         f.write("\n")
         f.write("ANGLE\n")
+        f.write("ca-ca-c3   {:9.5f}     {:8.4f}  Same as c3-c3-c3 (for initial guess)\n".format( param['ca-ca-c3'][0], param['ca-ca-c3'][1] ))
+        f.write("ca-c3-c3   {:9.5f}     {:8.4f}  Same as c3-c3-c3 (for initial guess)\n".format( param['ca-c3-c3'][0], param['ca-c3-c3'][1] ))
         f.write("cb-cb-cb   {:9.5f}     {:8.4f}  Same as c3-c3-c3 (for initial guess)\n".format( param['cb-cb-cb'][0], param['cb-cb-cb'][1] ))
         f.write("cb-cb-fb   {:9.5f}     {:8.4f}  Same as c3-c3-f (for initial guess)\n".format( param['cb-cb-fb'][0], param['cb-cb-fb'][1] ))
         f.write("cb-cb-c3   {:9.5f}     {:8.4f}  Same as c3-c3-c3 (for initial guess)\n".format( param['cb-cb-c3'][0], param['cb-cb-c3'][1] ))
@@ -591,7 +595,43 @@ def Optimize_MD_AMBER_structure(filename,struc,state='Ground',prepc_filename=Non
     
     # output RMSD (and optionaly also structure)
     if struc_out:
-        return RSMD, struc_new, struc_prepc
+        # find corespondence between original ordering of atoms and atoms in prepc file
+        indx_orig = struc_prepc.load_prepc(prepc_filename)
+        indx_struc = {}
+        type_unq = np.unique(struc.at_type)
+        for ii in type_unq:
+            indx_struc[ii] = []
+        for ii in range(struc.nat):
+            indx_struc[struc.at_type[ii]].append( ii )
+        
+        indx_prepc = deepcopy(indx_struc)
+        for ii in range(struc.nat):
+            indx_prepc[struc_prepc.at_type[ii]][indx_orig[ii] - 1] = ii
+            
+        indx_orig2new = np.zeros(struc.nat,dtype='i8')
+    
+        for jj in indx_prepc.keys():
+            for ii in range(len(indx_prepc[jj])):
+                indx_orig2new[indx_prepc[jj][ii]] = indx_struc[jj][ii] 
+       
+        indx_new2orig_atoms = np.zeros(struc.nat,dtype='i8')
+        for ii in range(struc.nat):
+            indx_new2orig_atoms[indx_orig2new[ii]] = ii 
+        indx_new2orig = np.zeros((struc.nat,3),dtype='i8')
+        for ii in range(3):
+            indx_new2orig[:,ii] = indx_new2orig_atoms*3+ii
+        indx_new2orig = indx_new2orig.reshape(3*struc.nat)
+        
+        struc_new_reor =  struc_new.copy()
+        struc_new_reor.coor._value = struc_new.coor._value[indx_new2orig_atoms,:]
+        for ii in range(struc_new.nat):
+            struc_new_reor.at_type[ii] = struc_new.at_type[indx_new2orig_atoms[ii]]
+        struc_new_reor.ncharge = struc_new.ncharge[indx_new2orig_atoms]
+        struc_new_reor.ff_type = struc_new.ff_type[indx_new2orig_atoms]
+        struc_new_reor.mass = struc_new.mass[indx_new2orig_atoms]
+        
+        
+        return RSMD, struc_new_reor, struc_prepc
     else:
         return RSMD
         
@@ -645,7 +685,7 @@ def get_AMBER_MD_normal_modes(struc,state='Ground',gen_input=False,**kwargs):
         f.write('setmol_from_xyz( m, NULL, x); \n')
         f.write('putpdb( "{:}", m ); \n\n'.format(pdb_out_filename))
         f.write('//get the normal modes: \n')
-        f.write('nmode( x, 3*m.natoms, mme2, 990, 0, 0.0, 0.0, 0); \n\n') 
+        f.write('nmode( x, 3*m.natoms, mme2, {:}, 0, 0.0, 0.0, 0); \n\n'.format(struc.nat*3)) 
         f.write('// instructions how to compile and run nab normal mode analysis. \n')
         f.write('// nab nmode.nab  \n')
         f.write('// ./a.out > freq.txt \n')
@@ -678,8 +718,14 @@ def get_AMBER_MD_normal_modes(struc,state='Ground',gen_input=False,**kwargs):
     for jj in indx_prepc.keys():
         for ii in range(len(indx_prepc[jj])):
             indx_orig2new[indx_prepc[jj][ii]] = indx_struc[jj][ii] 
-    
-    
+   
+    indx_new2orig_atoms = np.zeros(struc.nat,dtype='i8')
+    for ii in range(struc.nat):
+        indx_new2orig_atoms[indx_orig2new[ii]] = ii 
+    indx_new2orig = np.zeros((struc.nat,3),dtype='i8')
+    for ii in range(3):
+        indx_new2orig[:,ii] = indx_new2orig_atoms*3+ii
+    indx_new2orig = indx_new2orig.reshape(3*struc.nat)
     
     # organise files
     if not os.path.exists("Input_files"):
@@ -709,15 +755,24 @@ def get_AMBER_MD_normal_modes(struc,state='Ground',gen_input=False,**kwargs):
     
     # output normal modes, frequencies, reduced mass ...
     NM_info = {}
-    NM_info["int2cart"] = InternalToCartesian
-    NM_info["cart2int"] = CartesianToInternal
+    NM_info["int2cart"] = InternalToCartesian[indx_new2orig,:]
+    NM_info["cart2int"] = CartesianToInternal[:,indx_new2orig]
     NM_info["freq"] = Freqcm1
     NM_info["RedMass"] = RedMass
     NM_info['force'] = ForcesCm1Agstrom2
     NM_info['units'] = {"freq": "1/cm", "RedMass": "AMU(atomic mass units)",
            "force": "1/(cm * Angstrom^2)", "int2cart": "dimensionles",
            'cart2int': "dimensionles"}
-    return NM_info, indx_orig2new
+    struc_prepc_reor =  struc_prepc.copy()
+    struc_prepc_reor.coor._value = struc_prepc.coor._value[indx_new2orig_atoms,:]
+    for ii in range(struc_prepc.nat):
+        struc_prepc_reor.at_type[ii] = struc_prepc.at_type[indx_new2orig_atoms[ii]]
+    struc_prepc_reor.ncharge = struc_prepc.ncharge[indx_new2orig_atoms]
+    struc_prepc_reor.ff_type = struc_prepc.ff_type[indx_new2orig_atoms]
+    struc_prepc_reor.mass = struc_prepc.mass[indx_new2orig_atoms]
+    
+    NM_info['struc'] = struc_prepc_reor
+    return NM_info, indx_orig2new, indx_new2orig_atoms
     
     # write function for comparison of normal modes - gaussian vs AMBER
     
@@ -731,6 +786,8 @@ def get_AMBER_MD_normal_modes(struc,state='Ground',gen_input=False,**kwargs):
 # Default gaff parameters
 default_AMBER_param={'c3-c3': [303.1,1.5350], 'cb-cb': [303.1,1.5350], 
                      'cb-c3': [303.1,1.5350], 'c3-f': [363.8,1.3440],
+                     'ca-ca': [478.4,1.3870], 'ca-c3': [323.5,1.5130],   
+                     'ca-ca-c3': [63.84,120.63], 'ca-c3-c3': [63.25,112.09],
                      'cb-fb': [363.8,1.3440 ], 'c3-c3-c3': [63.21,110.63],
                      'cb-c3-c3': [63.21,110.63], 'cb-cb-c3': [63.21,110.63],
                      'cb-c3-cb': [63.21,110.63], 'c3-cb-c3': [63.21,110.63],
