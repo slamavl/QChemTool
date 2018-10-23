@@ -12,6 +12,7 @@ from ..QuantumChem.Classes.general import Energy
 from ..General.UnitsManager import UnitsManaged
 from ..QuantumChem.calc import identify_molecule
 from ..General.UnitsManager import position_units, energy_units
+from ..QuantumChem.positioningTools import AlignMolecules,SolveAngle,RotateAndMove_1
 
 global defects_database
 defects_database = {}
@@ -33,7 +34,7 @@ class Defect(Structure, UnitsManaged):
     
     """
 
-    def __init__(self, struc=None, energy=None, index=None, charges=None, params=None):
+    def __init__(self, struc=None, energy=None, index=None, charges=None, force=None, params=None):
         super().__init__()
         
         if (struc is not None):
@@ -91,6 +92,10 @@ class Defect(Structure, UnitsManaged):
         self.gr_charge = gr_charge
         self.ex_charge = ex_charge
         self.tr_charge = tr_charge
+        if force is not None:
+            self.force = np.reshape(force,(self.nat,3))
+        else:
+            self.force = np.zeros((self.nat,3),dtype='f8')
     
     def get_transition_energy(self):
         trE = Energy(self.energy.value[self.level_of_int])
@@ -197,7 +202,36 @@ class Defect(Structure, UnitsManaged):
     def load_charges_enegy_from_defect(self,other,debug=False):
         index,RSMD = other.identify_defect(self)
         
+#            # force assign
+#            coor,Phi,Psi,Chi,center = AlignMolecules(self.coor._value,other.coor._value,1,2,3,index[1],index[2],index[3], print_angles=True)
+#            coor,Phi1,Psi1,Chi1,center = CenterMolecule(other.coor._value,1,2,3,print_angles=True)
+#            force = RotateAndMove(other.force,0.0,0.0,0.0,Phi1,Psi1,Chi1)
+#            force = RotateAndMove_1(force,0.0,0.0,0.0,Phi,Psi,Chi)
+#            self.force = force[index]
+        
         if isinstance(other, Defect):
+            
+            # force assign
+            coorforce = np.zeros((self.nat*2,3),dtype='f8')
+            coorforce[:self.nat] = other.coor._value
+            for ii in range(self.nat):
+                coorforce[self.nat+ii,:] = other.force[ii] + other.coor._value[index[1]]
+            coorforce,Phi,Psi,Chi,center = AlignMolecules(self.coor._value,coorforce,1,2,3,index[1],index[2],index[3], print_angles=True)
+            force = coorforce[self.nat:]
+            for ii in range(self.nat):
+                force[ii] -= center
+            coor = coorforce[:self.nat]
+            coor = coor[index]
+            force = force[index]
+            coor_ref = self.coor._value
+            com = self.get_com()
+            for ii in range(self.nat):
+                coor[ii]-=com._value
+                coor_ref[ii]-=com._value
+            Phi,Psi,Chi=SolveAngle(coor_ref,coor,self.mass)
+            self.force=RotateAndMove_1(force,0.0,0.0,0.0,Phi,Psi,Chi)
+            # END force assign
+            
             self.gr_charge = other.gr_charge[index]
             self.ex_charge = []
             self.tr_charge = []
@@ -207,10 +241,20 @@ class Defect(Structure, UnitsManaged):
             
             self.energy = other.energy
             
+            
+            
             if debug: # TEST
+                def_out=self.copy()
+                def_out.coor._value = coor_ref
+                def_out.output_to_pdb("def_ref.pdb")
+                coor=RotateAndMove_1(coor,0.0,0.0,0.0,Phi,Psi,Chi)
+                def_out.coor._value=coor
+                def_out.output_to_pdb("def_aligned.pdb")
                 self.output_to_pdb("def_self.pdb")
-                other.coor.value = other.coor.value[index]
+                other.coor._value = other.coor._value[index]
                 other.output_to_pdb("def_other.pdb")
+                print(index)
+                print(self.force)
             
         else:
             pass
@@ -256,8 +300,62 @@ charge["transition"] = [[ 0.020079,  0.086397,  0.020079, -0.121994,  0.041025, 
 
 E01_cm={"exp": 22986.80041,"QC": 25405.43635}
 
+force_HaBohr_ex=[0.000000000,-0.020748084,-0.021151008,0.000000000,0.000000000,-0.000474298,
+                0.000000000,0.020748084,-0.021151008,0.000000000,-0.015252022,0.021467319,
+                0.000000000,-0.003209643,-0.018704877,0.000000000,0.008570649,-0.003101435,
+                0.000000000,0.000000000,-0.001933388,0.000000000,-0.008570649,-0.003101435,
+                0.000000000,0.003209643,-0.018704877,0.000000000,0.015252022,0.021467319,
+                0.000000000,0.020748084,0.021151008,0.000000000,-0.015252022,-0.021467319,
+                0.000000000,-0.003209643,0.018704877,0.000000000,0.008570649,0.003101435,
+                0.000000000,0.000000000,0.001933388,0.000000000,-0.008570649,0.003101435,
+                0.000000000,0.003209643,0.018704877,0.000000000,0.015252022,-0.021467319,
+                0.000000000,-0.020748084,0.021151008,0.000000000,0.000000000,0.000474298]
+
+force_HaBohr_gr=[   0.000000000,    0.006059970,    0.011606242,
+                    0.000000000,    0.000000000,    0.005643595,
+                    0.000000000,   -0.006059970,    0.011606242,
+                    0.000000000,    0.011679126,   -0.004397274,
+                    0.000000000,    0.010385037,    0.002723364,
+                    0.000000000,   -0.005942684,   -0.008399333,
+                    0.000000000,    0.000000000,   -0.007516848,
+                    0.000000000,    0.005942684,   -0.008399333,
+                    0.000000000,   -0.010385037,    0.002723364,
+                    0.000000000,   -0.011679126,   -0.004397274,
+                    0.000000000,   -0.006059970,   -0.011606242,
+                    0.000000000,    0.011679126,    0.004397274,
+                    0.000000000,    0.010385037,   -0.002723364,
+                    0.000000000,   -0.005942684,    0.008399333,
+                    0.000000000,    0.000000000,    0.007516848,
+                    0.000000000,    0.005942684,    0.008399333,
+                    0.000000000,   -0.010385037,   -0.002723364,
+                    0.000000000,   -0.011679126,    0.004397274,
+                    0.000000000,    0.006059970,   -0.011606242,
+                    0.000000000,    0.000000000,   -0.005643595]
+
+grad_HaBohr = -(np.array(force_HaBohr_ex)-np.array(force_HaBohr_gr)) 
+
+#force_HaBohr=[  -2.11510080e-02,  -2.07480840e-02,  0.0,
+#                -4.74298000e-04,   0.00000000e+00,  0.0,
+#                -2.11510080e-02,   2.07480840e-02,  0.0,
+#                 2.14673190e-02,  -1.52520220e-02,  0.0,
+#                -1.87048770e-02,  -3.20964300e-03,  0.0,
+#                -3.10143500e-03,   8.57064900e-03,  0.0,
+#                -1.93338800e-03,   0.00000000e+00,  0.0,
+#                -3.10143500e-03,  -8.57064900e-03,  0.0,
+#                -1.87048770e-02,   3.20964300e-03,  0.0,
+#                 2.14673190e-02,   1.52520220e-02,   0.0,
+#                 2.11510080e-02,   2.07480840e-02,   0.0,
+#                -2.14673190e-02,  -1.52520220e-02,  0.0,
+#                 1.87048770e-02,  -3.20964300e-03,   0.0,
+#                 3.10143500e-03,   8.57064900e-03,   0.0,
+#                 1.93338800e-03,   0.00000000e+00,   0.0,
+#                 3.10143500e-03,  -8.57064900e-03,   0.0,
+#                 1.87048770e-02,   3.20964300e-03,   0.0,
+#                -2.14673190e-02,   1.52520220e-02,  0.0,
+#                 2.11510080e-02,  -2.07480840e-02,   0.0,
+#                 4.74298000e-04,   0.00000000e+00,   0.0]
             
-perylene_defect = {"struc_angstrom": struc_A, "charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None}
+perylene_defect = {"struc_angstrom": struc_A, "charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None, "force_HaBohr": grad_HaBohr}
 
 # =============================================================================
 # Anthanthrene
@@ -303,8 +401,30 @@ charge["transition"] = [[ 0.007236, -0.102847,  0.047689, -0.121857,  0.030959, 
 
 E01_cm={"exp": 23067.45585,"QC": 24998.92356}
 
+force_HaBohr=[  -0.000633859,   -0.000470933,    0.000000000,
+                 0.000030972,   -0.009310660,    0.000000000,
+                 0.019335315,   -0.000833351,    0.000000000,
+                -0.019356918,    0.015415649,    0.000000000,
+                 0.005616235,   -0.022285771,    0.000000000,
+                 0.004223883,    0.003551274,    0.000000000,
+                 0.014288453,    0.006369194,    0.000000000,
+                -0.014288453,   -0.006369194,    0.000000000,
+                 0.010511286,   -0.020165074,    0.000000000,
+                 0.003623147,    0.013853085,    0.000000000,
+                 0.006959233,    0.009067440,    0.000000000,
+                 0.012692227,   -0.004620516,    0.000000000,
+                -0.005616235,    0.022285771,    0.000000000,
+                -0.004223883,   -0.003551274,    0.000000000,
+                 0.000633859,    0.000470933,    0.000000000,
+                -0.000030972,    0.009310660,    0.000000000,
+                -0.019335315,    0.000833351,    0.000000000,
+                 0.019356918,   -0.015415649,    0.000000000,
+                -0.003623147,   -0.013853085,    0.000000000,
+                -0.010511286,    0.020165074,    0.000000000,
+                -0.006959233,   -0.009067440,    0.000000000,
+                -0.012692227,    0.004620516,    0.000000000]
             
-anthanthrene_defect = {"struc_angstrom": struc_A,"charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None}
+anthanthrene_defect = {"struc_angstrom": struc_A,"charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None, "force_HaBohr": force_HaBohr}
 
 # =============================================================================
 # Bisanthrene
@@ -359,8 +479,36 @@ charge["transition"] = [[-0.036667, -0.007477,  0.089221, -0.014949,  0.043396, 
 
 E01_cm={"exp": 15082.56729,"QC": 16154.04404}
 
+force_HaBohr=[  0.000000000,    0.013023047,    0.002414221,
+                0.000000000,   -0.014103476,    0.001136013,
+                0.000000000,    0.002774832,    0.009238372,
+                0.000000000,   -0.003298552,   -0.009487490,
+                0.000000000,   -0.003613622,   -0.006440386,
+                0.000000000,    0.003195323,   -0.004151408,
+                0.000000000,    0.000000000,   -0.005484606,
+                0.000000000,   -0.003195323,   -0.004151408,
+                0.000000000,   -0.013023047,    0.002414221,
+                0.000000000,    0.000000000,   -0.019226537,
+                0.000000000,    0.000000000,    0.019226537,
+                0.000000000,   -0.013023047,   -0.002414221,
+                0.000000000,    0.014103476,   -0.001136013,
+                0.000000000,   -0.002774832,   -0.009238372,
+                0.000000000,    0.003298552,    0.009487490,
+                0.000000000,    0.003613622,    0.006440386,
+                0.000000000,   -0.003195323,    0.004151408,
+                0.000000000,    0.000000000,    0.005484606,
+                0.000000000,    0.003195323,    0.004151408,
+                0.000000000,    0.013023047,   -0.002414221,
+                0.000000000,   -0.014103476,   -0.001136013,
+                0.000000000,    0.002774832,   -0.009238372,
+                0.000000000,   -0.003298552,    0.009487490,
+                0.000000000,   -0.003613622,    0.006440386,
+                0.000000000,    0.014103476,    0.001136013,
+                0.000000000,   -0.002774832,    0.009238372,
+                0.000000000,    0.003298552,   -0.009487490,
+                0.000000000,    0.003613622,   -0.006440386]
             
-bisanthrene_defect = {"struc_angstrom": struc_A,"charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None}
+bisanthrene_defect = {"struc_angstrom": struc_A,"charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None, "force_HaBohr": force_HaBohr}
 
 # =============================================================================
 # Perylene2
@@ -413,8 +561,34 @@ charge["transition"] = [[-0.048166, -0.042862,  0.042862,  0.048166,  0.042862, 
 
 E01_cm={"exp": None,"QC": 24480.29712}
 
+force_HaBohr=[   0.000000000,    0.000000000,    0.000239038,
+                 0.006739959,    0.000000000,    0.027294417,
+                 0.006739959,    0.000000000,   -0.027294417,
+                 0.000000000,    0.000000000,   -0.000239038,
+                -0.006739959,    0.000000000,   -0.027294417,
+                -0.006739959,    0.000000000,    0.027294417,
+                -0.014662802,    0.000000000,    0.012370376,
+                 0.000000000,    0.000000000,   -0.000177734,
+                 0.001747915,    0.000000000,    0.009821404,
+                -0.008986309,    0.000000000,   -0.009544343,
+                -0.006429064,    0.000000000,   -0.004085581,
+                 0.000000000,    0.000000000,    0.007671077,
+                 0.006429064,    0.000000000,   -0.004085581,
+                -0.001747915,    0.000000000,    0.009821404,
+                 0.008986309,    0.000000000,   -0.009544343,
+                 0.014662802,    0.000000000,    0.012370376,
+                -0.014662802,    0.000000000,   -0.012370376,
+                 0.000000000,    0.000000000,    0.000177734,
+                 0.014662802,    0.000000000,   -0.012370376,
+                -0.008986309,    0.000000000,    0.009544343,
+                 0.001747915,    0.000000000,   -0.009821404,
+                 0.008986309,    0.000000000,    0.009544343,
+                -0.001747915,    0.000000000,   -0.009821404,
+                -0.006429064,    0.000000000,    0.004085581,
+                 0.006429064,    0.000000000,    0.004085581,
+                 0.000000000,    0.000000000,   -0.007671077]
             
-perylene2_defect = {"struc_angstrom": struc_A,"charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None}
+perylene2_defect = {"struc_angstrom": struc_A,"charges": charge,"E01_cm": E01_cm, "tr_dipole_exp": None, "force_HaBohr": force_HaBohr}
 
 def initialize_defect_database(energy_type="QC"):
     defects_database = {}
@@ -423,17 +597,21 @@ def initialize_defect_database(energy_type="QC"):
         with energy_units("1/cm"):
             perylene = Defect(struc=perylene_defect["struc_angstrom"], 
                               energy= perylene_defect["E01_cm"][energy_type],
-                              charges=perylene_defect["charges"])
+                              charges=perylene_defect["charges"],
+                              force=perylene_defect["force_HaBohr"])
             anthanthrene = Defect(struc=anthanthrene_defect["struc_angstrom"], 
                               energy= anthanthrene_defect["E01_cm"][energy_type],
-                              charges=anthanthrene_defect["charges"])
+                              charges=anthanthrene_defect["charges"],
+                              force=anthanthrene_defect["force_HaBohr"])
             bisanthrene = Defect(struc=bisanthrene_defect["struc_angstrom"], 
                               energy= bisanthrene_defect["E01_cm"][energy_type],
-                              charges=bisanthrene_defect["charges"])
+                              charges=bisanthrene_defect["charges"],
+                              force=bisanthrene_defect["force_HaBohr"])
             #print(perylene2_defect["struc_angstrom"]["coor"], perylene2_defect["struc_angstrom"]["at_type"])
             perylene2 = Defect(struc=perylene2_defect["struc_angstrom"], 
                               energy= perylene2_defect["E01_cm"][energy_type],
-                              charges=perylene2_defect["charges"])
+                              charges=perylene2_defect["charges"],
+                              force=perylene2_defect["force_HaBohr"])
     defects_database["perylene"] = perylene
     defects_database["anthanthrene"] = anthanthrene
     defects_database["bisanthrene"] = bisanthrene
