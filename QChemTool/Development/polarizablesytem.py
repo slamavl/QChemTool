@@ -1062,6 +1062,11 @@ class PolarizableSystem(UnitsManaged):
         # TODO: Add derivation of pol2-env
         # TODO: Split environment contribution and polarizable atoms contribution - both different dimensions
 
+        # Defect contribution
+        dR_Eshift_def = np.zeros((Nat_env,3),dtype='f8')
+        dR_Eshift_def[index] = defect.force
+        dR_Eshift_def = np.reshape(dR_Eshift_def,3*Nat_env)
+
         if approx==1.1:
             # Calculate transition energy shift
             dR_Eshift_env = dR_dAVA
@@ -1082,11 +1087,12 @@ class PolarizableSystem(UnitsManaged):
                                                      4*dR_pol1_env_static_tr_env +
                                                      2*dR_pol1_env_Alpha_E_tr_env)
             
-            
+            # contribution from inter defect vibrations
+            # dR_Eshift_env += dR_Eshift_def
             
 #            Eshift += 2*(Polar2_env_Alpha_st_ex - Polar1_env_Alpha_st_ex - Polar2_env_Alpha_st_gr + Polar1_env_Alpha_st_gr)
 
-
+            # defect.force, index 
             return dR_Eshift, dR_Eshift_env
         else:
             raise IOError('Unsupported approximation')
@@ -1692,6 +1698,8 @@ def _get_diel_params(charge_type,coarse_grain,approx,use_VinterFG,symm=False):
     #print(coarse_grain,charge_type,use_VinterFG)
     
     if approx==1.1 and symm:
+        Alpha_st[0,0] = 2.2672980775
+        Alpha_st[1,1] = Alpha_st[0,0]
         if coarse_grain == "plane":
             if charge_type == 'Hirshfeld':
                 AlphaE[0,0] = 6.9334582685
