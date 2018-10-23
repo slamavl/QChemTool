@@ -1260,7 +1260,7 @@ def prepare_carotenoid(Dim,Position=numpy.array([0.0,0.0,0.0]),vec_x=numpy.array
     Dim : int
         Number of atoms in carotenoid
     Position : numpy.array of real (dimension 3)
-        Coordinates of carotenoid center
+        Coordinates of carotenoid center in atomic units
     vec_x : numpy.array of real (dimension 3)
         Cabron chain will be oriented in `vec_x` direction
     vec_y : numpy.array of real (dimension 3)
@@ -1269,7 +1269,8 @@ def prepare_carotenoid(Dim,Position=numpy.array([0.0,0.0,0.0]),vec_x=numpy.array
     Returns
     -------
     Coor : numpy.array of real (dimension Dimx3 )
-        Matrix wit atomic coordinates of all carotenoid carbons 
+        Matrix wit atomic coordinates of all carotenoid carbons
+        in atomic units (Bohr)
     '''    
     
     alpha = 120.0/180*scipy.pi
