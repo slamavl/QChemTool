@@ -288,6 +288,12 @@ class Structure(PositionUnitsManaged):
             Displacements along x, y, and z coordinate
         """
         self.coor.move(dx,dy,dz)
+        
+        # Atomic dipoles and quadrupoles are independent on origin of coordinate system (shift of coordinates) 
+#        if (self.tr_quadr2 is not None) or (self.tr_quadrR2 is not None):
+#            print('Structure: Translation of quadrupoles is not implemented yet. Dealocation of all atomic quadrupoles')
+#            self.tr_quadr2=None
+#            self.tr_quadrR2=None
     
     def rotate(self,rotxy,rotxz,rotyz):
         """"
