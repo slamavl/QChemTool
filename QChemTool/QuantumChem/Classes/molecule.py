@@ -823,7 +823,7 @@ class Molecule:
             Displacements along x, y, and z coordinate
         """
         
-        self.struc.move(dx,dy,dz)
+        self.struc.move(dx,dy,dz)   # Only coordinates are shifted - correctly units managed
         self.ao.move(dx,dy,dz)
         for ii in range(len(self.exct)):
             self.exct[ii].move(dx,dy,dz)
@@ -878,6 +878,9 @@ class Molecule:
         if len(self.exct)!=0:
             for ii in range(len(self.exct)):
                 self.exct[ii].rotate(rotxy,rotxz,rotyz,self.ao)
+        for key in self.repre.keys():
+            if key!='AllAtom':
+                self.repre[key].rotate(rotxy,rotxz,rotyz)
                 
                     
 # TODO: Test this part
@@ -1486,9 +1489,17 @@ class Molecule:
             structure_new=self.struc.copy()
             self.repre[rep_name]=structure_new
         self.repre[rep_name].tr_char=at_charges.copy()
-        self.repre[rep_name].tr_dip=at_dipoles.copy()
-        self.repre[rep_name].tr_quadr2=at_quad_r2.copy()
-        self.repre[rep_name].tr_quadrR2=at_quad_rR2.copy()
+        if MultOrder>0: 
+            self.repre[rep_name].tr_dip=at_dipoles.copy()
+        else:
+            self.repre[rep_name].tr_dip=None
+        if MultOrder>1: 
+            self.repre[rep_name].tr_quadr2=at_quad_r2.copy()
+            self.repre[rep_name].tr_quadrR2=at_quad_rR2.copy()
+        else:
+            self.repre[rep_name].tr_quadr2=None
+            self.repre[rep_name].tr_quadrR2=None
+        
     
     def create_3D_oscillator_representation(self,NMN1,TrDip1,At_list=None,scale_by_overlap=False,nearest_neighbour=True,centered="Bonds",verbose=False,rep_name='Oscillator',**kwargs):
         '''
@@ -1543,7 +1554,7 @@ class Molecule:
             oscillator_struc=self.struc.get_3D_oscillator_representation(NMN1,TrDip1,At_list=At_list,scale_by_overlap=scale_by_overlap,nearest_neighbour=nearest_neighbour,centered=centered,verbose=verbose)
         else:
             oscillator_struc=self.struc.get_3D_oscillator_representation(NMN1,TrDip1,At_list=At_list,scale_by_overlap=scale_by_overlap,nearest_neighbour=nearest_neighbour,centered=centered,verbose=verbose,**kwargs)
-        self.repre['Oscillator']=oscillator_struc
+        self.repre[rep_name]=oscillator_struc
     
     def copy(self):
         ''' Create deep copy of the all informations in the molecule. 
