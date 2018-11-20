@@ -314,7 +314,7 @@ class Structure(PositionUnitsManaged):
         if self.tr_dip is not None:
             self.tr_dip=RotateAndMove(self.tr_dip,0.0,0.0,0.0,rotxy,rotxz,rotyz)
         if (self.tr_quadr2 is not None) or (self.tr_quadrR2 is not None):
-            print('Rotation of quadrupoles is not implemented yet. Dealocation of all atomic quadrupoles')
+            print('Structure: Rotation of quadrupoles is not implemented yet. Dealocation of all atomic quadrupoles')
             self.tr_quadr2=None
             self.tr_quadrR2=None
 # TODO: Rotate grid
@@ -1591,9 +1591,9 @@ class Structure(PositionUnitsManaged):
         struc_oscillator.name="".join([self.name,' 3D oscillator representation'])
         for ii in range(struc_oscillator.nat):
             struc_oscillator.at_type="".join([struc1.at_type[bond1[ii][0]],struc1.at_type[bond1[ii][1]]])                        
-        struc_oscillator.tr_char=np.zeros(Ndip1,dtype='f8')
-        struc_oscillator.tr_quadr2=np.zeros(Ndip1,dtype='f8')
-        struc_oscillator.tr_quadrR2=np.zeros((6,Ndip1),dtype='f8')
+        struc_oscillator.tr_char = np.zeros(Ndip1,dtype='f8')
+        struc_oscillator.tr_quadr2 = None #np.zeros(Ndip1,dtype='f8')
+        struc_oscillator.tr_quadrR2 = None #np.zeros((6,Ndip1),dtype='f8')
         
         return struc_oscillator
 
