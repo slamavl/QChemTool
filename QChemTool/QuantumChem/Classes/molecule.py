@@ -1319,6 +1319,50 @@ class Molecule:
         return mo_cube
     
     
+    def get_ao_cube(self,ao_i,extend=5.0,step=0.4,nt=0):
+        """ Create cube density for specified molecular orbital
+        
+        Parameters
+        ----------
+        ao_i : integer
+            Index of atomic orbital which will be evaluated on the grid 
+            (starting from 0)
+        extend : float (optional init = 5.0)
+            Extension of the grid in every dimension from farthermost atoms
+        step : float (optional init = 0.4)
+            Spacing between individual grid points
+        nt : integer (optional init = 0)
+            Specifies how many cores should be used for the calculation.
+            Secial cases: 
+            ``nt=0`` all available cores are used for the calculation. 
+            ``nt=1`` serial calculation is performed.
+            ``nt=N`` Ncores are used for the calculation.
+        
+        Returns
+        --------
+        ao_cube : Density class
+            Cube density of specified molecular orbital.
+            
+        Notes
+        ------
+        Used grid for evaluation of transition density is read
+        from **self.struc.grid**, if not present default setting will be used for 
+        grid alocation
+        """
+        
+        if self.struc.grid is None:
+            self.struc.get_grid(extend=extend,step=step)
+        
+        grid=self.struc.grid
+        ao_grid = self.ao.get_slater_ao_grid(self.struc.grid,ao_i)
+        step=np.zeros((3,3))
+        step[0,0]=grid.delta[0]
+        step[1,1]=grid.delta[1]
+        step[2,2]=grid.delta[2]
+        ao_cube=DensityGrid(np.array(grid.origin),np.shape(grid.X),step,ao_grid,typ='mo',mo_indx=ao_i+1,Coor=self.struc.coor._value,At_charge=self.struc.ncharge)
+        return ao_cube
+    
+    
     def get_excitation_type(self,krit=85,nvec=[0.0,0.0,1.0]):
         """ Determines the transition type ('Pi -> Pi', 'Pi -> Sigma', 
         'Sigma -> Pi' or 'Sigma -> Sigma') for all transitions in molecule.
@@ -1489,10 +1533,12 @@ class Molecule:
             structure_new=self.struc.copy()
             self.repre[rep_name]=structure_new
         self.repre[rep_name].tr_char=at_charges.copy()
+        
         if MultOrder>0: 
             self.repre[rep_name].tr_dip=at_dipoles.copy()
         else:
             self.repre[rep_name].tr_dip=None
+            
         if MultOrder>1: 
             self.repre[rep_name].tr_quadr2=at_quad_r2.copy()
             self.repre[rep_name].tr_quadrR2=at_quad_rR2.copy()
