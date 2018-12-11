@@ -159,7 +159,7 @@ def identify_molecule(struc,struc_test,indx_center1,indx_x1,indx_y1,indx_center_
     else:
         return index1
 
-def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=False,**kwargs):
+def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=False,energy=None,**kwargs):
     """ Create oscillator representation of molecule
     
     Parameters:
@@ -225,6 +225,10 @@ def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=
     
     # Calculate dipole-dipole interaction energy between all dipoles
     hh=numpy.zeros((Ndip,Ndip),dtype='f8')
+    if energy is not None:
+        for ii in range(Ndip):
+            hh[ii,ii] = energy[ii]
+    
     for ii in range(Ndip):
         for jj in range(ii+1,Ndip):
             if nearest_neighbour:
@@ -236,15 +240,17 @@ def molecule_osc_3D(rr,bond,factor,NMN,TrDip,centered,nearest_neighbour,verbose=
                 else:
                     dr=numpy.linalg.norm(ro[ii,:]-ro[jj,:])
                     if dr<=cutoff_dist:
-                        hh[ii,jj]=dipole_dipole(ro[ii,:],do[ii,:],ro[jj,:],do[jj,:])
+                        hh[ii,jj]=dipole_dipole(ro[ii,:],do[ii,:],ro[jj,:],do[jj,:],'Hartree')
                         hh[jj,ii]=hh[ii,jj]
             else:
-                hh[ii,jj]=dipole_dipole(ro[ii,:],do[ii,:],ro[jj,:],do[jj,:])
+                hh[ii,jj]=dipole_dipole(ro[ii,:],do[ii,:],ro[jj,:],do[jj,:],'Hartree')
                 hh[jj,ii]=hh[ii,jj]
   
     
     # Calculate normal modes (eigenvectors and eigenvalues of hh)
     val,vec=numpy.linalg.eigh(hh) # val= vector with eigenvalues and vec= matrix with eigenvectors in columns
+
+    #print(val)
 
     if verbose:
         for jj in range(6):
