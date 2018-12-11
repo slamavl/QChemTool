@@ -161,7 +161,7 @@ class MO:
         
         TransfMat=AO._get_ao_rot_mat(rotxy,rotxz,rotyz)
 # TODO: check this transformation of molecular orbitals
-        self.coeff=np.dot(TransfMat,self.coeff)
+        self.coeff=np.dot(TransfMat,self.coeff.T).T
         if self.densmat_grnd is not None:
             self.densmat_grnd=np.dot(TransfMat,np.dot(self.densmat_grnd,TransfMat.T))
     

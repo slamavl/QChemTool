@@ -146,7 +146,7 @@ def dipole_dipole(center1,dipole1,center2,dipole2,*args):
         Interaction energy of two point dipoles
     '''
     
-    if 0:   # both provides the same results
+    if "array" in args:   # both provides the same results
         if np.ndim(center1)==1:
             r1=np.array([center1],dtype='f8')
             dip1=np.array([dipole1],dtype='f8')

@@ -246,6 +246,12 @@ class Excitation:
             self.dens_exct.move(dx,dy,dz)
         if self.dens_trans is not None:
             self.dens_trans.move(dx,dy,dz)
+        # atomic dipoles and quadrupoles defined coordinate independent 
+        
+#        if (self.tr_quadr2 is not None) or (self.tr_quadrR2 is not None):
+#            print('Excitation: Translation of quadrupoles is not implemented yet. Dealocation of all atomic quadrupoles')
+#            self.tr_quadr2=None
+#            self.tr_quadrR2=None
             
     def get_tr_densmat(self,MO):
         """Calculate transition electron density matrix.
@@ -461,7 +467,7 @@ class Excitation:
         return dipole,at_dipole
     
     
-    def get_transition_atomic_quadrupole(self,AO,MO=None):
+    def get_transition_atomic_quadrupole(self,AO,MO=None,verbose=False):
         """Calculate transition atomic quadrupoles for multipole expansion in 
         inter-atomic distances.
         
@@ -506,8 +512,12 @@ class Excitation:
         """
         
         if AO.quadrupole is None:
+            if verbose:
+                print("Calculating atomic quadrupole matrix...")
             AO.get_quadrupole()
         if self.densmat_trans is None:
+            if verbose:
+                print("Calculating transition density matrix...")
             self.get_tr_densmat(MO)
         
         Nat=max([AO.atom[ii].indx for ii in range(AO.nao)])+1

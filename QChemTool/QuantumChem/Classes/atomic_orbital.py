@@ -569,7 +569,9 @@ class AO:
         Dipole matrix is stored in:\n
         **self.quadrupole** \n
         as numpy array of float dimension (6 x Nao_orient x Nao_orient) and
-        ordering of quadrupole moments is: xx, xy, xz, yy, yz, zz
+        ordering of quadrupole moments is: xx, xy, xz, yy, yz, zz \n \n
+        quadrupoles are defined as ``Qij(mu,nu) = \int{AO_mu(r+R_mu)*ri*rj*AO_nu(r+R_mu)}``\n
+        The AO_mu is shifted to zero making the quadrupoles independent to coordinate shifts
         
         """
         
@@ -676,6 +678,134 @@ class AO:
                 print('Elapsed time for seriall slater quadrupoele matrix allocation:',elapsed)        
                 
         self.quadrupole=np.copy(QuadMat)
+        
+    
+#    def get_quadrupole_old(self,nt=0,verbose=False):
+#        """ Calculate quadrupole matrix between atomic orbitals
+#        
+#        Parameters
+#        ----------
+#        nt : integer (optional init = 0)
+#            Specifies how many cores should be used for the calculation.
+#            Secial cases: 
+#            ``nt=0`` all available cores are used for the calculation. 
+#            ``nt=1`` serial calculation is performed.
+#        verbose : logical (optional init = False)
+#            If ``True`` information about time needed for overlap calculation 
+#            will be printed
+#        
+#        Notes
+#        ---------
+#        Dipole matrix is stored in:\n
+#        **self.quadrupole** \n
+#        as numpy array of float dimension (6 x Nao_orient x Nao_orient) and
+#        ordering of quadrupole moments is: xx, xy, xz, yy, yz, zz
+#        
+#        """
+#        
+#        QuadMat=np.zeros((6,self.nao_orient,self.nao_orient),dtype='f8')
+#        start_time = timeit.default_timer()
+#
+#        do_faster=False
+#        if (self.dipole is not None) and (self.overlap is not None):
+#            do_faster=True
+#        
+#        # choose platform for calculation
+#        if (platform=='cygwin' or platform=="linux" or platform == "linux2") and nt!=1 and nt>=0:
+#            typ='paralell'
+#        elif platform=='win32' or nt==1:
+#            typ='seriall'
+#        else:
+#            typ='seriall_old'
+#            
+#        if typ=='seriall' or typ=='paralell':
+#            ''' Convert all imput parameters into matrix which has dimension Nao_orient '''      
+#            # prepare imput
+#            Coor_lin=np.zeros((self.nao_orient,3))
+#            Coeffs_lin=[]
+#            Exp_lin=[]
+#            Orient_lin=[]
+#            counter1=0
+#            for ii in range(self.nao):
+#                for jj in range(len(self.orient[ii])):
+#                    Coor_lin[counter1]=self.coor._value[ii]
+#                    Coeffs_lin.append(self.coeff[ii])
+#                    Exp_lin.append(self.exp[ii])
+#                    Orient_lin.append(self.orient[ii][jj])
+#                    counter1+=1
+#                
+#            quad_over_line_partial = partial(_quad_over_line, Coor_lin,Coeffs_lin,Exp_lin,Orient_lin,do_faster)
+#            # Only parameter of this function is number of row whih is calculated
+#        else:
+#            counter1=0
+#            for ii in range(self.nao):
+#                for jj in range(len(self.orient[ii])):
+#                    counter2=0
+#                    for kk in range(self.nao):
+#                        for ll in  range(len(self.orient[kk])):
+#                            Rik=self.coor._value[kk]-self.coor._value[ii]
+#                            R0=np.zeros(3)
+#                            QuadMat[:,counter1,counter2]=quadrupole_STO(R0,Rik,self.coeff[ii],self.coeff[kk],self.exp[ii],self.exp[kk],self.orient[ii][jj],self.orient[kk][ll])
+#                            counter2 += 1
+#                    counter1 += 1
+#                    
+#            elapsed = timeit.default_timer() - start_time
+#            print('Elapsed time for slater quadrupole matrix allocation:',elapsed)
+#        
+#        if typ=='paralell':        
+#            ''' Parallel part '''
+##            print('Prepairing parallel calculation')
+#            if nt>0:
+#                pool = Pool(processes=nt)
+#            else:
+#                pool = Pool(processes=cpu_count())
+#            index_list=range(self.nao_orient)
+#            QuadMat_tmp= np.array(pool.map(quad_over_line_partial,index_list))
+#            pool.close() # ATTENTION HERE
+#            pool.join()
+#        elif typ=='seriall':
+#            index_list=range(self.nao_orient)
+#            ''' Seriall part '''
+#            for ii in range(self.nao_orient):
+#                QuadMat[:,ii,:]=np.swapaxes(quad_over_line_partial(index_list[ii]),0,1)            
+#                
+#        ''' Fill the lower triangle of overlap matrix'''
+#        if typ=='seriall' and do_faster:
+#            for ii in range(self.nao_orient):
+#                for jj in range(ii):
+#                    counter=0
+#                    Rji=self.coor._value[self.indx_orient[ii][0]]-self.coor._value[self.indx_orient[jj][0]]
+#                    Rj=self.coor._value[self.indx_orient[jj][0]]
+#                    Dji=np.array([self.dipole['Dip_X'][jj,ii],self.dipole['Dip_Y'][jj,ii],self.dipole['Dip_Z'][jj,ii]])
+#                    SSji=self.overlap[jj,ii]                    
+#                    for kk in range(3):
+#                        for ll in range(kk,3):
+#                            QuadMat[counter,ii,jj]=QuadMat[counter,jj,ii]-Rji[kk]*Dji[ll]-Rji[ll]*Dji[kk]+(Rj[kk]*Rji[ll]+Rj[ll]*Rji[kk]+Rji[kk]*Rji[ll])*SSji
+#                            counter+=1
+#        if typ=='paralell' and do_faster:
+#            for ii in range(self.nao_orient):
+#                for jj in range(ii):
+#                    counter=0
+#                    Rji=self.coor._value[self.indx_orient[ii][0]]-self.coor._value[self.indx_orient[jj][0]]
+#                    Rj=self.coor._value[self.indx_orient[jj][0]]
+#                    Dji=np.array([self.dipole['Dip_X'][jj,ii],self.dipole['Dip_Y'][jj,ii],self.dipole['Dip_Z'][jj,ii]])
+#                    SSji=self.overlap[jj,ii]                    
+#                    for kk in range(3):
+#                        for ll in range(kk,3):
+#                            QuadMat_tmp[ii,jj,counter]=QuadMat_tmp[jj,ii,counter]-Rji[kk]*Dji[ll]-Rji[ll]*Dji[kk]+(Rj[kk]*Rji[ll]+Rj[ll]*Rji[kk]+Rji[kk]*Rji[ll])*SSji
+#                            counter+=1
+#            QuadMat=np.copy(np.swapaxes(QuadMat_tmp,0,2))
+#            QuadMat=np.copy(np.swapaxes(QuadMat,1,2))
+#                    
+#        elapsed = timeit.default_timer() - start_time
+#        
+#        if verbose:
+#            if typ=='paralell':
+#                print('Elapsed time for parallel slater quadrupole matrix allocation:',elapsed)
+#            elif typ=='seriall':
+#                print('Elapsed time for seriall slater quadrupoele matrix allocation:',elapsed)        
+#                
+#        self.quadrupole=np.copy(QuadMat)
     
     def get_slater_ao_grid(self,grid,indx,keep_grid=False,new_grid=True):  # Jediny je spravne se spravnou normalizaci  
         """ Evaluate single slater orbital on given grid
@@ -1021,17 +1151,39 @@ class AO:
             Displacements along x, y, and z coordinate
         """
         
-        self.coor.move(dx,dy,dz)
+        # So Far dipole defined only in internal units
+        dx_int = self.coor.manager.convert_position_2_internal_u(dx)
+        dy_int = self.coor.manager.convert_position_2_internal_u(dy)
+        dz_int = self.coor.manager.convert_position_2_internal_u(dz)
+        
+        # Quadrupoles are defined coordinate idependent
+#        if self.quadrupole is not None: # Must be first because we need unshifted dipoles
+#            if self.dipole is None:
+#                self.get_dipole_matrix()
+#            if self.overlap is None:
+#                self.get_overlap()
+#            self.quadrupole[0,:,:] = self.quadrupole[0,:,:] + 2*dx_int*self.dipole['Dip_X'] + (dx_int**2)*self.overlap
+#            self.quadrupole[1,:,:] = self.quadrupole[1,:,:] + dy_int*self.dipole['Dip_X'] + dx_int*self.dipole['Dip_Y'] + dx_int*dy_int*self.overlap
+#            self.quadrupole[2,:,:] = self.quadrupole[2,:,:] + dz_int*self.dipole['Dip_X'] + dx_int*self.dipole['Dip_Z'] + dx_int*dz_int*self.overlap
+#            self.quadrupole[3,:,:] = self.quadrupole[3,:,:] + 2*dy_int*self.dipole['Dip_Y'] + (dy_int**2)*self.overlap
+#            self.quadrupole[4,:,:] = self.quadrupole[4,:,:] + dz_int*self.dipole['Dip_Y'] + dy_int*self.dipole['Dip_Z'] + dy_int*dz_int*self.overlap
+#            self.quadrupole[5,:,:] = self.quadrupole[5,:,:] + 2*dz_int*self.dipole['Dip_Z'] + (dz_int**2)*self.overlap
+##            * quadrupole[0,:,:] = quadrupole xx matrix <AO_i|x^2|AO_j>
+##            * quadrupole[1,:,:] = quadrupole xy matrix <AO_i|xy|AO_j>
+##            * quadrupole[2,:,:] = quadrupole xz matrix <AO_i|xz|AO_j>
+##            * quadrupole[3,:,:] = quadrupole yy matrix <AO_i|yy|AO_j>
+##            * quadrupole[4,:,:] = quadrupole yz matrix <AO_i|yz|AO_j>
+##            * quadrupole[5,:,:] = quadrupole zz matrix <AO_i|zz|AO_j>
+#            #print('AO: Translation of AO quadrupoles is not yet supported')
+#            #self.quadrupole=None
         if self.dipole is not None:
             if self.overlap is None:
                 self.get_overlap()
-            self.dipole['Dip_X']=self.dipole['Dip_X']+dx*self.overlap
-            self.dipole['Dip_Y']=self.dipole['Dip_Y']+dy*self.overlap
-            self.dipole['Dip_Z']=self.dipole['Dip_Z']+dz*self.overlap
-        if self.quadrupole is not None:
-            print('Translation of AO quadrupoles is not yet supported')
-            self.quadrupole=None
-    
+            self.dipole['Dip_X']=self.dipole['Dip_X']+dx_int*self.overlap
+            self.dipole['Dip_Y']=self.dipole['Dip_Y']+dy_int*self.overlap
+            self.dipole['Dip_Z']=self.dipole['Dip_Z']+dz_int*self.overlap
+        self.coor.move(dx,dy,dz)
+        
     def copy(self):
         ''' Create deep copy of the all information in the class. 
         
