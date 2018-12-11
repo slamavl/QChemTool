@@ -1507,6 +1507,8 @@ class Structure(PositionUnitsManaged):
             more transitions. With name ``'TotTrDip'`` there have to be defined 
             transition dipoles for individual transitions. With name ``'Coef'``
             is definition of expansion coefficients for tranitions.
+            ``'DipoleSiteEnergy'`` - list with diagonal hamiltonian elements 
+            for classical harmonic oscillator
             
         Returns
         -------
@@ -1521,6 +1523,11 @@ class Structure(PositionUnitsManaged):
             struc1=self.copy()
         else:
             struc1=self.copy(indx=At_list)
+        
+        if 'DipoleSiteEnergy' in kwargs:
+            energy_dip = kwargs['DipoleSiteEnergy']
+        else:
+            energy_dip = None
         
         if struc1.bonds is None:
             struc1.guess_bonds()
@@ -1566,7 +1573,8 @@ class Structure(PositionUnitsManaged):
             for ii in range(len(TrDip)):
                 ro_tmp, do_tmp = molecule_osc_3D(struc1.coor._value,struc1.bonds,
                                                factor1,NMN[ii],TrDip[ii],
-                                               centered,nearest_neighbour,verbose=verbose,**kwargs)
+                                               centered,nearest_neighbour,verbose=verbose,
+                                               energy=energy_dip,**kwargs)
                 ro1=np.copy(ro_tmp)
                 do1+=Coef[ii]*do_tmp
             # normalize total dipole
@@ -1576,7 +1584,8 @@ class Structure(PositionUnitsManaged):
         else:
             # Calculate normal modes and output position and dipoles normalized to TrDip
             ro1, do1 = molecule_osc_3D(struc1.coor._value,struc1.bonds,factor1,NMN,
-                                    TrDip,centered,nearest_neighbour,verbose=verbose,**kwargs)
+                                    TrDip,centered,nearest_neighbour,verbose=verbose,
+                                    energy=energy_dip,**kwargs)
         
         dipole1=np.sum(do1,0)
         if verbose:
