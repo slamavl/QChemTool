@@ -285,7 +285,7 @@ def read_gaussian_fchk(filename, **kwargs):
                                   basis_count += 1                                         # za s orbital z sp hybridizace
                               elif ii == -2:
                                   ii='5d'
-                                  ao_types.append('5d')
+                                  ao.type.append('5d')
                                   basis_count += l_deg(ii,cartesian_basis=True)
                               elif ii == -3:
                                   ii='7f'
@@ -453,6 +453,8 @@ def read_gaussian_fchk(filename, **kwargs):
     # Fill atomic orbitals - the missing parts
     ao.nao=len(ao.type)
     if ao.nao != len(ao.coeff) or ao.nao != len(ao.exp):
+        print("Atomic types:",ao.nao,"  n. of coefficients:",len(ao.coeff)," and exponents:",len(ao.exp))
+        #print(ao.type)
         raise Warning('Wrong read of atomic orbitals')
     for ii in range(ao.nao):
         orient=l_orient(ao.type[ii])
