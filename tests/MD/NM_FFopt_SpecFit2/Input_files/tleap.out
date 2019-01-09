@@ -1,0 +1,60 @@
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/prep to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/lib to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/parm to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/cmd to search path.
+-f: Source tleap.in.
+
+Welcome to LEaP!
+(no leaprc in search path)
+Sourcing: ./tleap.in
+----- Source: /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff
+----- Source of /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff done
+Log file: ./leap.log
+Loading parameters: ./gaff.dat
+Reading title:
+AMBER General Force Field for organic molecules (Version 1.7, Nov 2013)
+Loading Prep file: ./nab_input.prepc
+Loading parameters: ./nab_input.frcmod
+Reading force field modification type file (frcmod)
+Reading title:
+remark goes here
+ Creating nab_input.lib
+Building topology.
+Building atom parameters.
+Checking Unit.
+Building topology.
+Building atom parameters.
+Building bond parameters.
+Building angle parameters.
+Building proper torsion parameters.
+Building improper torsion parameters.
+old PREP-specified impropers:
+ <FGR 1>:  C59  C60  C180 C49 
+ <FGR 1>:  C168 C180 C49  C169
+ <FGR 1>:  C38  C50  C169 C49 
+ <FGR 1>:  C39  C50  C170 C51 
+ <FGR 1>:  C181 C169 C50  C170
+ <FGR 1>:  C50  C60  C181 C61 
+ <FGR 1>:  C181 C191 C60  C180
+ <FGR 1>:  C60  C71  C191 C72 
+ <FGR 1>:  C190 C191 C71  C202
+ <FGR 1>:  C81  C71  C202 C82 
+ <FGR 1>:  C213 C202 C82  C203
+ <FGR 1>:  C82  C72  C203 C83 
+ <FGR 1>:  C191 C203 C72  C192
+ <FGR 1>:  C72  C61  C192 C73 
+ <FGR 1>:  C181 C192 C61  C182
+ <FGR 1>:  C62  C61  C182 C51 
+ <FGR 1>:  C171 C182 C51  C170
+ <FGR 1>:  C193 C192 C73  C204
+ <FGR 1>:  C84  C73  C204 C83 
+ <FGR 1>:  C214 C203 C83  C204
+ total 12 improper torsions applied
+ 20 improper torsions in old prep form
+Building H-Bond parameters.
+Incorporating Non-Bonded adjustments.
+Not Marking per-residue atom chain types.
+Marking per-residue atom chain types.
+ (no restraints)
+Writing pdb file: nab_input.pdb
+	Quit

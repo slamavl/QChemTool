@@ -1,0 +1,28 @@
+molecule m; 
+float x[786], fret; 
+
+m = getpdb( "nab_input.pdb"); 
+readparm( m, "nab_input.prmtop" ); 
+mm_options( "cut=999.0, ntpr=50" ); 
+setxyz_from_mol(m, NULL, x); 
+mme_init( m, NULL, "::ZZZ", x, NULL); 
+
+//conjugate gradient minimization 
+conjgrad(x, 3*m.natoms, fret, mme, 0.001, 0.0001, 30000); 
+
+//Newton-Raphson minimization 
+mm_options( "ntpr=10" ); 
+newton( x, 3*m.natoms, fret, mme, mme2, 0.00000001, 0.0, 500 ); 
+
+//Output minimized structure 
+setmol_from_xyz( m, NULL, x); 
+putpdb( "nab_opt_structure.pdb", m ); 
+
+//get the normal modes: 
+nmode( x, 3*m.natoms, mme2, 990, 0, 0.0, 0.0, 0); 
+
+// instructions how to compile and run nab normal mode analysis. 
+// nab nmode.nab  
+// ./a.out > freq.txt 
+// eigenvectors are stored in vecs file 
+// reduced masses and information about frequencies and minimization is stored in freq.txt 

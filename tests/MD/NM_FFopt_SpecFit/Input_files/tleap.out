@@ -1,0 +1,65 @@
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/prep to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/lib to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/parm to search path.
+-I: Adding /home/slamav/Software/AMBER/amber14/dat/leap/cmd to search path.
+-f: Source tleap.in.
+
+Welcome to LEaP!
+(no leaprc in search path)
+Sourcing: ./tleap.in
+----- Source: /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff
+----- Source of /home/slamav/Software/AMBER/amber14/dat/leap/cmd/leaprc.gaff done
+Log file: ./leap.log
+Loading parameters: /home/slamav/Software/AMBER/amber14/dat/leap/parm/gaff.dat
+Reading title:
+AMBER General Force Field for organic molecules (Version 1.7, Nov 2013)
+Loading Prep file: ./nab_input.prepc
+Loading parameters: ./nab_input.frcmod
+Reading force field modification type file (frcmod)
+Reading title:
+remark goes here
+ Creating nab_input.lib
+Building topology.
+Building atom parameters.
+Checking Unit.
+ERROR: The unperturbed charge of the unit: -1.044000 is not integral.
+WARNING: The unperturbed charge of the unit: -1.044000 is not zero.
+
+ -- ignoring the error and warning.
+
+Building topology.
+Building atom parameters.
+Building bond parameters.
+Building angle parameters.
+Building proper torsion parameters.
+Building improper torsion parameters.
+old PREP-specified impropers:
+ <FGR 1>:  C16  C22  C79  C23 
+ <FGR 1>:  C78  C79  C22  C85 
+ <FGR 1>:  C28  C22  C85  C29 
+ <FGR 1>:  C41  C35  C98  C42 
+ <FGR 1>:  C91  C98  C35  C92 
+ <FGR 1>:  C35  C29  C92  C36 
+ <FGR 1>:  C85  C92  C29  C86 
+ <FGR 1>:  C29  C23  C86  C30 
+ <FGR 1>:  C79  C86  C23  C80 
+ <FGR 1>:  C17  C23  C80  C24 
+ <FGR 1>:  C81  C80  C24  C87 
+ <FGR 1>:  C31  C24  C87  C30 
+ <FGR 1>:  C86  C87  C30  C93 
+ <FGR 1>:  C30  C36  C93  C37 
+ <FGR 1>:  C92  C93  C36  C99 
+ <FGR 1>:  C36  C42  C99  C43 
+ <FGR 1>:  C105 C98  C42  C99 
+ <FGR 1>:  C106 C99  C43  C100
+ <FGR 1>:  C44  C43  C100 C37 
+ <FGR 1>:  C94  C93  C37  C100
+ total 12 improper torsions applied
+ 20 improper torsions in old prep form
+Building H-Bond parameters.
+Incorporating Non-Bonded adjustments.
+Not Marking per-residue atom chain types.
+Marking per-residue atom chain types.
+ (no restraints)
+Writing pdb file: nab_input.pdb
+	Quit
