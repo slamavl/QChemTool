@@ -1587,6 +1587,13 @@ class Molecule:
             more transitions. With name ``'TotTrDip'`` there have to be defined 
             transition dipoles for individual transitions. With name ``'Coef'``
             is definition of expansion coefficients for tranitions.
+            ``'DipoleSiteEnergy'`` - list with diagonal hamiltonian elements 
+            for classical harmonic oscillator.
+            To set the value of interaction energy between elementary use 
+            keyword ``'ForceCoupling'`` with coupling value. This value will
+            be the same for all interacting dipoles. Sign of the interaction 
+            energy between two dipoles is set to sign of a scalar product of 
+            two elementary dipoles.
             
         Notes
         -------

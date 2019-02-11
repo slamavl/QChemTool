@@ -979,9 +979,11 @@ class AO:
             for ii in orbit:
                 RotA[ii],RotB[ii],RotC[ii]=fill_basis_transf_matrix(ii,rotxy,rotxz,rotyz)
             
-            TransfMat=np.dot(RotC[self.type[0][0]],np.dot(RotB[self.type[0][0]],RotA[self.type[0][0]]))
+            #TransfMat=np.dot(RotC[self.type[0][0]],np.dot(RotB[self.type[0][0]],RotA[self.type[0][0]]))
+            TransfMat=np.dot(RotC[self.type[0]],np.dot(RotB[self.type[0]],RotA[self.type[0]]))
             for ii in range(1,self.nao):
-                Rot_tmp=np.dot(RotC[self.type[ii][0]],np.dot(RotB[self.type[ii][0]],RotA[self.type[ii][0]]))
+                #Rot_tmp=np.dot(RotC[self.type[ii][0]],np.dot(RotB[self.type[ii][0]],RotA[self.type[ii][0]]))
+                Rot_tmp=np.dot(RotC[self.type[ii]],np.dot(RotB[self.type[ii]],RotA[self.type[ii]]))
                 TransfMat=scipy.linalg.block_diag(TransfMat,Rot_tmp)
             TransfMat=np.array(TransfMat)
             return TransfMat

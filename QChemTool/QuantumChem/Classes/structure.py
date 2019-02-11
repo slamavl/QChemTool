@@ -11,6 +11,7 @@ import scipy
 import numpy as np
 import networkx as nx
 from os import path
+import matplotlib.pyplot as plt
 
 
 from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf, read_AMBER_prepc
@@ -149,6 +150,8 @@ class Structure(PositionUnitsManaged):
     get_3D_oscillator_representation :
         Create 3D classical oscillator representation of the structure or part
         of the structure defined by atomic indexes
+    plot_molecule_2D :
+        Plot structure projection on xy plane
     '''
     
     vdw_rad = UnitsManaged("vdw_rad")
@@ -177,8 +180,12 @@ class Structure(PositionUnitsManaged):
 # Proton number information is in self.ncharge
         
     def add_coor(self,coor,at_type,ncharge=None,mass=None):
-        if len(at_type)!=len(coor):
-            raise Warning('For every atom coordinate there has to be atom type')
+        if ncharge is None:
+            if len(at_type)!=len(coor):
+                raise Warning('For every atom coordinate there has to be atom type')
+        else:
+            if len(ncharge)!=len(coor):
+                raise Warning('For every atom coordinate there has to be atom type')
         
         if not self.init:
             self.coor=Coordinate(coor)
@@ -1509,6 +1516,11 @@ class Structure(PositionUnitsManaged):
             is definition of expansion coefficients for tranitions.
             ``'DipoleSiteEnergy'`` - list with diagonal hamiltonian elements 
             for classical harmonic oscillator
+            To set the value of interaction energy between elementary use 
+            keyword ``'ForceCoupling'`` with coupling value. This value will
+            be the same for all interacting dipoles. Sign of the interaction 
+            energy between two dipoles is set to sign of a scalar product of 
+            two elementary dipoles.
             
         Returns
         -------
@@ -1605,6 +1617,37 @@ class Structure(PositionUnitsManaged):
         struc_oscillator.tr_quadrR2 = None #np.zeros((6,Ndip1),dtype='f8')
         
         return struc_oscillator
+    
+    def plot_molecule_2D(self,**kwargs): # for proper usage project on plane defined by normal vector and coeff optional 
+        """
+        Plot molecule projection on xy plane
+        
+        """
+        
+        fig, ax = plt.subplots()
+        if self.bonds is None:
+            self.guess_bonds()
+        for bond in self.bonds:
+            plt.plot(self.coor.value[bond,0],self.coor.value[bond,1],'k-')
+        plt.axis('equal')
+        for atom in self.coor.value:
+            at_circle = plt.Circle((atom[0], atom[1]), 0.2, color='k')
+            ax.add_artist(at_circle)
+#        trcoeff = coeff[2::3]
+#        trcoeff = trcoeff/max(np.abs(trcoeff))
+#        trcoeff_pos = trcoeff.copy()
+#        trcoeff_neg = trcoeff.copy()
+#        trcoeff_pos[trcoeff<=0.0] = 0.0
+#        trcoeff_neg[trcoeff>=0.0] = 0.0
+#        for ii in range(self.nat):
+#            atom = self.coor.value[ii]
+#            at_circle = plt.Circle((atom[0], atom[1]), trcoeff_pos[ii]*2, color='r')
+#            ax.add_artist(at_circle)
+#            at_circle = plt.Circle((atom[0], atom[1]), trcoeff_neg[ii]*2, color='b')
+#            ax.add_artist(at_circle)
+        if 'title' in kwargs:
+            plt.title(kwargs['title'])
+        plt.show()
 
 VdW_radius={'ca': 1.9080,'f': 1.75,'h1': 1.3870,'h2': 1.2870,'h3': 1.4090,
             'h4': 1.4090,'h5': 1.3590,'ha': 1.4590,'hc':1.4870,'hn': 0.6000,'ho': 0.0000,
