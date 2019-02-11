@@ -200,6 +200,51 @@ def dipole_dipole(center1,dipole1,center2,dipole2,*args):
                     return Edip_dip_cm1
                     
         return Edip_dip_cm1   
+
+
+def charge_density(coor1,charge1,density):
+    ''' Function for calculation of interaction energy through transition density
+    cube method (TDC).
+    
+    Parameters
+    ----------
+    center1 : numpy.array of real (dimension Nx3)
+        Array of centers of first group of point charges in ATOMIC UNITS (Bohr)
+    charge1 : numpy.array of real (dimension N)
+        Array of charges of first group of point charges in times of electron charge
+    density2 : DensityGrid type
+        Information about transition density spatial distribution of second 
+        molecule
+        
+    Returns
+    -------
+    res :  real
+        Interaction energy calculated by transition density cube method in 
+        ATOMIC UNITS (Hartree)
+    
+    '''
+    res=0.0
+   
+    # step vectors of the density grid
+    vecX=np.copy(density.step[0,:])
+    vecY=np.copy(density.step[1,:])
+    vecZ=np.array([vecX[1]*vecY[2]-vecX[2]*vecY[1],vecX[2]*vecY[0]-vecX[0]*vecY[2],vecX[0]*vecY[1]-vecX[1]*vecY[0]])
+    dV=np.dot(vecZ,density.step[2,:])
+            
+    # Obtain grid positions and charges
+    indx_z = np.tile(np.arange(density.grid[2]),(3,1))
+    for m in range(density.grid[0]):
+        for n in range(density.grid[1]):
+            orig_vec = density.origin + m*density.step[0,:]+n*density.step[1,:]
+            coor2 = indx_z.T * np.tile(density.step[2,:],(density.grid[2],1))
+            coor2 += np.tile(orig_vec,(density.grid[2],1))
+            charge2 = density.data[m,n,:]
+            res += charge_charge(coor1,charge1,coor2,charge2)[0]
+    
+    res = -res*dV # there is - because density corresponds to electron density 
+                  # therefore grid charge is -density.data
+    
+    return res
    
 
 def _trans_density_row(origin1,grid1,step1,rho1,origin2,grid2,step2,rho2,RR2_x,RR2_y,RR2_z,MinDistance,indx): # it might be faster than _trans_density_row
@@ -351,9 +396,9 @@ def trans_density(density1,density2,MinDistance=0.1,nt=1):
     dV2=np.dot(vecZ,density2.step[2,:])
         
     if typ=='paralell' or typ=='serial':
-        RR2_x=np.zeros((density1.grid[0],density1.grid[1],density1.grid[2]),dtype='f8')
-        RR2_y=np.zeros((density1.grid[0],density1.grid[1],density1.grid[2]),dtype='f8')
-        RR2_z=np.zeros((density1.grid[0],density1.grid[1],density1.grid[2]),dtype='f8')
+        RR2_x=np.zeros((density2.grid[0],density2.grid[1],density2.grid[2]),dtype='f8')
+        RR2_y=np.zeros((density2.grid[0],density2.grid[1],density2.grid[2]),dtype='f8')
+        RR2_z=np.zeros((density2.grid[0],density2.grid[1],density2.grid[2]),dtype='f8')
         for m in range(density2.grid[0]):
             for n in range(density2.grid[1]):
                 for o in range(density2.grid[2]):
