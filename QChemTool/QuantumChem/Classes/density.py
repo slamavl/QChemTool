@@ -110,6 +110,7 @@ class DensityGrid(PositionUnitsManaged):
             self.coor = Coordinate(Coor)
         self.at_charge = np.copy(At_charge)
         
+        
     def output(self,filename='density.cub'):
         ''' Output density to cube file 
         
@@ -158,6 +159,7 @@ class DensityGrid(PositionUnitsManaged):
                     #f.write("\n")
                     if self.grid[2]%6!=0:
                         f.write("\n")
+
                     
     def import_cub(self,filename):
         ''' Import data from density cube file 
@@ -212,6 +214,7 @@ class DensityGrid(PositionUnitsManaged):
             self.coor=Coordinate(Coor)
             self.origin=origin.copy()
             self.step=step.copy()
+            
         
         # read density
         self.data=np.zeros((self.grid[0],self.grid[1],self.grid[2]),dtype='f8')
