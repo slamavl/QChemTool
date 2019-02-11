@@ -180,8 +180,12 @@ class Structure(PositionUnitsManaged):
 # Proton number information is in self.ncharge
         
     def add_coor(self,coor,at_type,ncharge=None,mass=None):
-        if len(at_type)!=len(coor):
-            raise Warning('For every atom coordinate there has to be atom type')
+        if ncharge is None:
+            if len(at_type)!=len(coor):
+                raise Warning('For every atom coordinate there has to be atom type')
+        else:
+            if len(ncharge)!=len(coor):
+                raise Warning('For every atom coordinate there has to be atom type')
         
         if not self.init:
             self.coor=Coordinate(coor)
