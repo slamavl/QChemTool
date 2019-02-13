@@ -215,18 +215,18 @@ def molecule_to_PYscf(mol):
         AtomName=mol.struc.at_type[i_atom]
         if ii == 0:
             counter=0
-            mol_scf.basis = { AtomName: [[str2l(mol.ao.type[ii][0])]]}
+            mol_scf.basis = { AtomName: [[str2l(mol.ao.type[ii])]]}
             for jj in range(len(mol.ao.exp[ii])):
                 mol_scf.basis[AtomName][counter].append((mol.ao.exp[ii][jj],mol.ao.coeff[ii][jj]))
         else:
             if i_atom_old==i_atom:
                 counter+=1
-                mol_scf.basis[AtomName].append([str2l(mol.ao.type[ii][0])])
+                mol_scf.basis[AtomName].append([str2l(mol.ao.type[ii])])
                 for jj in range(len(mol.ao.exp[ii])):
                     mol_scf.basis[AtomName][counter].append((mol.ao.exp[ii][jj],mol.ao.coeff[ii][jj]))
             else:
                 counter=0
-                mol_scf.basis[AtomName]=[[str2l(mol.ao.type[ii][0])]]
+                mol_scf.basis[AtomName]=[[str2l(mol.ao.type[ii])]]
                 for jj in range(len(mol.ao.exp[ii])):
                     mol_scf.basis[AtomName][counter].append((mol.ao.exp[ii][jj],mol.ao.coeff[ii][jj]))                                    
         i_atom_old=np.copy(i_atom)
@@ -235,9 +235,9 @@ def molecule_to_PYscf(mol):
     mol_scf.build()
     for ii in range(mol.ao_spec['Nao']):
         if ii==0:
-            TrMat=TransMat(mol.ao_spec['Type'][ii][0])
+            TrMat=TransMat(mol.ao.type[ii])
         else:
-            Mat=TransMat(mol.ao_spec['Type'][ii][0])
+            Mat=TransMat(mol.ao.type[ii])
             TrMat=scipy.linalg.block_diag(TrMat,Mat)
     
     
