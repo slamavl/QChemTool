@@ -41,11 +41,21 @@ class Electrostatics:
         self.charge=np.copy(charge)
         self.at_type=np.copy(at_type)
         self.Nat=len(coor)
-    
+
+# FIXME: Rename this function because it does not calculate Energy shift but only 
+# eletrostatic interaction energy
     def get_EnergyShift(self,index=None,charge=None):
-        ''' Function calculates change in electrostatic interaction energy between
-        environment and defect in ground state and defect in excited state.
-        <A|V|A>-<G|V|G>
+        ''' Function calculates electrostatic interaction energy between
+        environment and defect.
+        
+        Parameters (optional)
+        ------------
+        index: list of integers
+            List of atom indexes for which we would like to change the default
+            charge
+        charge: numpy array of real (dimension = len(index))
+            New charges for specified atoms in index. If not specified zero 
+            charges will be used.
         
         Returns
         -------
@@ -121,6 +131,9 @@ class Electrostatics:
         Eshift : real
             Change in interaction energy for pigment in ground state and in 
             excited state in ATOMIC UNITS (Hartree)
+        dEshift_R : numpy array of real (dimension 3*Natoms)
+            Derivative of Coulomb interaction energy with respect to atomic 
+            coordinates
         '''
         
         # Zero charges on atoms defined by index
