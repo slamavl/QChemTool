@@ -124,7 +124,7 @@ def molecule_to_PYscf_Pot(mol):
     """
     
     print('Using molecule_to_PYscf_Pot')
-    mol_scf = gto.Mole(units = 'Angstrom')    
+    mol_scf = gto.Mole(unit = 'angstrom')    
     mol_scf.verbose = 0
 
 # TODO: this part is completly the same as in previous function - it would be better to put this code to separate function than repeat it many times
@@ -142,32 +142,35 @@ def molecule_to_PYscf_Pot(mol):
         AtomName="".join([mol.struc.at_type[i_atom],'@',str(i_atom)])
         if ii == 0:
             counter=0
-            mol_scf.basis = { AtomName: [[str2l(mol.ao.type[ii][0])]]}
+            #mol_scf.basis = { AtomName: [[str2l(mol.ao.type[ii][0])]]}
+            mol_scf.basis = { AtomName: [[str2l(mol.ao.type[ii])]]}
             for jj in range(len(mol.ao.exp[ii])):
                 mol_scf.basis[AtomName][counter].append((mol.ao.exp[ii][jj],mol.ao.coeff[ii][jj]))
         else:
             if i_atom_old==i_atom:
                 counter+=1
-                mol_scf.basis[AtomName].append([str2l(mol.ao.type[ii][0])])
+                # mol_scf.basis[AtomName].append([str2l(mol.ao.type[ii][0])])
+                mol_scf.basis[AtomName].append([str2l(mol.ao.type[ii])])
                 for jj in range(len(mol.ao.exp[ii])):
                     mol_scf.basis[AtomName][counter].append((mol.ao.exp[ii][jj],mol.ao.coeff[ii][jj]))
             else:
                 counter=0
-                mol_scf.basis[AtomName]=[[str2l(mol.ao.type[ii][0])]]
+                #mol_scf.basis[AtomName]=[[str2l(mol.ao.type[ii][0])]]
+                mol_scf.basis[AtomName]=[[str2l(mol.ao.type[ii])]]
                 for jj in range(len(mol.ao.exp[ii])):
-                    mol_scf.basis[AtomName][counter].append((mol.ao.exp[ii][jj],mol.ao.coeff[ii][jj]))                                    
+                    mol_scf.basis[AtomName][counter].append((mol.ao.exp[ii][jj],mol.ao.coeff[ii][jj]))                                   
         i_atom_old=np.copy(i_atom)
 #-------------------------------------------------------------------------------------------------        
-    mol_scf.atom.append(['He',np.array([1.23456789,1.23456789,1.23456789])*conversion_facs_position["Angstrom"]])
+    mol_scf.atom.append(['He',np.array([1.23456789,1.23456789,1.23456789])*conversion_facs_position["Angstrom"]])    
     
     #building imput molecule for PYscf program
     mol_scf.build()
     mol_scf._atm[len(mol_scf._atm)-1,0]=1
     for ii in range(mol.ao.nao):
         if ii==0:
-            TrMat=TransMat(mol.ao.type[ii][0])
+            TrMat=TransMat(mol.ao.type[ii])
         else:
-            Mat=TransMat(mol.ao.type[ii][0])
+            Mat=TransMat(mol.ao.type[ii])
             TrMat=scipy.linalg.block_diag(TrMat,Mat)
             
     return mol_scf,TrMat
