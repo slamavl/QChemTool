@@ -249,7 +249,7 @@ def OutputTOmol2(Coor,Bond,Charge,AtName,AtType,MolName,filename,ChargeMethod='r
         for ii in range(Nbond):
             counter+=1
             f.write("{:>7d}".format(counter))
-            f.write("{:>6d}{:>6d}{:>2d}\n".format(Bond[ii,0],Bond[ii,1],BondType[ii]))
+            f.write("{:>6d}{:>6d}{:>2d}\n".format(Bond[ii,0]+1,Bond[ii,1]+1,BondType[ii]))
         if Ninfo!=0:
             f.write("@<TRIPOS>SUBSTRUCTURE \n")
         for ii in range(Ninfo):
