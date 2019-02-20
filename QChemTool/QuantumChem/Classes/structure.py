@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 from ..read_mine import read_xyz, read_VMD_pdb, read_mol2, read_gaussian_gjf, read_AMBER_prepc
 from ..read_mine import read_TrEsp_charges as read_TrEsp
 from .general import Coordinate,Grid 
-from ...General.UnitsManager import position_units,PositionUnitsManaged,energy_units
-from ...General.types import UnitsManaged
+from ...General.UnitsManager import position_units,PositionUnitsManaged,energy_units, EnergyUnitsManaged, UnitsManaged
+from ...General.types import UnitsManagedPosition, UnitsManagedEnergy
 from ..positioningTools import RotateAndMove, RotateAndMove_1, CenterMolecule
 from ..output import OutputToXYZ, OutputTOmol2, OutputToPDB
 
@@ -28,7 +28,7 @@ nist_mass = None
 nist_indx = None
  
     
-class Structure(PositionUnitsManaged):
+class Structure(UnitsManaged):
     ''' Class containing all information about atomic properties (coordinates, 
     atom types, atomic mass...)
         
@@ -58,6 +58,8 @@ class Structure(PositionUnitsManaged):
     vdw_rad : numpy array of real (dimension Natoms)
         Van der Waals radius for every atom (used for creating cavity in 
         polarizable dielectric model). Radii taken from GAFF forcefield  
+    vdw_eng : numpy array of real (dimension Natoms)
+        Van der Waals energy for every atom taken from GAFF forcefield  
     esp_grnd : numpy array of real (dimension Natoms)
         Ground state charge from ESP calculation for every atom
     esp_exct : numpy array of real (dimension Natoms)
@@ -107,7 +109,9 @@ class Structure(PositionUnitsManaged):
     guess_bonds :
         Add bonds between atoms which are close together
     get_bonded_atoms :
-        
+        Find all bonded atoms to each atom and output as a list
+    get_14_bonded_atoms:
+        Finds 1-4 bonded atoms and output as a list
     count_fragments :
         Count how many separate structures are in the structure and outputs
         indexes of individual separate units.
@@ -154,7 +158,8 @@ class Structure(PositionUnitsManaged):
         Plot structure projection on xy plane
     '''
     
-    vdw_rad = UnitsManaged("vdw_rad")
+    vdw_rad = UnitsManagedPosition("vdw_rad")
+    vdw_eng = UnitsManagedEnergy("vdw_eng")
     
     def __init__(self):
         self.name='Molecule'
@@ -167,6 +172,7 @@ class Structure(PositionUnitsManaged):
         self.ncharge=None
         self.mass=None
         self.vdw_rad=None
+        self.vdw_eng=None
         self.ff_type=None
         self.esp_grnd=None
         self.esp_exct=None
@@ -478,7 +484,7 @@ class Structure(PositionUnitsManaged):
         '''    
         
         if bond_length is None:
-            bond_length=4.0
+            bond_length=3.5
         else:
             bond_length = self.coor.manager.convert_position_2_internal_u(bond_length)
 
@@ -525,6 +531,60 @@ class Structure(PositionUnitsManaged):
             connected[atom1].append(atom2)
             connected[atom2].append(atom1)
         return connected
+    
+    def get_14_bonded_atoms(self):
+        """ Finds 1-4 bonded atoms which will be outputed as a list.
+        
+        """
+        
+        if self.bonds is None:
+            self.guess_bonds()
+        connected = self.get_bonded_atoms()
+        
+        bonded_14 = []
+        for ii in range(self.nat):
+            bonded_14tmp = []
+            for jj in connected[ii]:
+                bonded_14tmp.append(jj)
+            for kk in bonded_14tmp.copy():
+                for jj in connected[kk]:
+                    if jj!=ii:
+                         bonded_14tmp.append(jj)
+            bonded_14tmp = list(np.unique(bonded_14tmp))
+            for kk in bonded_14tmp.copy():
+                for jj in connected[kk]:
+                    if jj!=ii:
+                         bonded_14tmp.append(jj)
+            bonded_14tmp = np.unique(bonded_14tmp)
+            bonded_14.append(list(bonded_14tmp))
+        return bonded_14
+            
+                
+    def get_distance_matrixes(self):
+        '''
+        Calculate inter-atom distance and vector matrix
+        
+        Returns
+        ---------
+        R: numpy array of real (dimension Natom x Natom x 3)
+            ``R[i,j,:]`` corresponds to the vector from atom j to atom i 
+            (in ATOMIC UNITS = bohr)
+        RR: numpy array of real (dimension Natom x Natom)
+            Interatomic distance matrix (in ATOMIC UNITS = bohr)
+        '''
+        # calculation of tensors with interatomic distances
+        R=np.zeros((self.nat,self.nat,3),dtype='f8') # mutual distance vectors
+        for ii in range(self.nat):
+            for jj in range(ii+1,self.nat):
+                R[ii,jj,:]=self.coor._value[ii]-self.coor._value[jj]
+                R[jj,ii,:]=-R[ii,jj,:]
+        RR=np.sqrt(np.power(R[:,:,0],2)+np.power(R[:,:,1],2)+np.power(R[:,:,2],2))  # mutual distances
+        
+        return R,RR            
+        
+        
+        
+        
         
     def count_fragments(self,verbose=False):
         ''' Divide the structure into individual units between which there is
@@ -839,7 +899,7 @@ class Structure(PositionUnitsManaged):
       
         '''
 
-        coor,charge,at_type,DipoleTrESP,DipoleExact=read_TrEsp(filename,dipole=True)
+        coor,charge,at_type,DipoleTrESP,DipoleExact=read_TrEsp(filename,dipole=True,verbose=False)
 
         with position_units('Angstrom'):
             if not self.init:
@@ -1011,12 +1071,16 @@ class Structure(PositionUnitsManaged):
             self.get_FF_types()
         else:
             Vdw_rad = np.zeros(self.nat)
+            Vdw_eng = np.zeros(self.nat)
             for ii in range(self.nat):
                 Vdw_rad[ii]=VdW_radius[self.ff_type[ii]]
+                Vdw_eng[ii]=VdW_energy[self.ff_type[ii]]
         
         with position_units('Angstrom'):
             self.vdw_rad=Vdw_rad
         
+        with energy_units('kcal/mol'):
+            self.vdw_eng=Vdw_eng
 
     def get_grid(self,extend=5.0,step=0.4):
         ''' Generate the equidistant grid around the molecule
@@ -1657,6 +1721,19 @@ VdW_radius={'ca': 1.9080,'f': 1.75,'h1': 1.3870,'h2': 1.2870,'h3': 1.4090,
             'cy': 1.9080,'cz': 1.9080,'n': 1.8240,'n1': 1.8240,'n2': 1.8240,'n3': 1.8240,'n4': 1.8240,
             'na': 1.8240,'nb': 1.8240,'nc': 1.8240,'nd': 1.8240,'ne': 1.8240,'nf': 1.8240,'nh': 1.8240,
             'no': 1.8240,'cl': 1.948}
+
+VdW_energy={'h1': 0.0157,'h2': 0.0157,'h3': 0.0157,'h4': 0.0150,'h5': 0.0150,'ha': 0.0150,
+            'hc': 0.0157,'hn': 0.0157,'ho': 0.0000,'hp': 0.0157,'hs': 0.0157,'hw': 0.0000,
+            'hx': 0.0157,'o': 0.2100,'oh': 0.2104,'os': 0.1700,'ow': 0.1520,'c': 0.0860,
+            'c1': 0.2100,'c2': 0.0860,'c3': 0.1094,'ca': 0.0860,'cc': 0.0860,'cd': 0.0860,
+            'ce': 0.0860,'cf': 0.0860,'cg': 0.2100,'ch': 0.2100,'cp': 0.0860,'cq': 0.0860,
+            'cu': 0.0860,'cv': 0.0860,'cx': 0.0860,'cy': 0.0860,'cz': 0.0860,'n': 0.1700,
+            'n1': 0.1700,'n2': 0.1700,'n3': 0.1700,'n4': 0.1700,'na': 0.1700,'nb': 0.1700,
+            'nc': 0.1700,'nd': 0.1700,'ne': 0.1700,'nf': 0.1700,'nh': 0.1700,'no': 0.1700,
+            's': 0.2500,'s2': 0.2500,'s4': 0.2500,'s6': 0.2500,'sx': 0.2500,'sy': 0.2500,
+            'sh': 0.2500,'ss': 0.2500,'p2': 0.2000,'p3': 0.2000,'p4': 0.2000,'p5': 0.2000,
+            'pb': 0.2000,'pc': 0.2000,'pd': 0.2000,'pe': 0.2000,'pf': 0.2000,'px': 0.2000,
+            'py': 0.2000,'f': 0.061,'cl': 0.265,'br': 0.420,'i': 0.50}
 
 def read_nist():
   '''Reads and converts the atomic masses from the "Linearized ASCII Output"

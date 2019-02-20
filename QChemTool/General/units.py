@@ -31,7 +31,8 @@ conversion_facs_energy = {
     "1/cm"    : 2*const.Rydberg/100,
     "THz"     : const.c*const.Rydberg*2*1e-12,
     "J"       : const.h*const.c*const.Rydberg*2,
-    "SI"      : const.h*const.c*const.Rydberg*2
+    "SI"      : const.h*const.c*const.Rydberg*2,
+    "kcal/mol": const.h*const.c*const.Rydberg*2/const.calorie*const.N_A/1000
 #    "nm"     : 1.0/(1.0e7*2.0*const.pi*const.c*1.0e-13),
     } 
 
@@ -42,6 +43,13 @@ conversion_facs_position = {
     "m"        : const.physical_constants["Bohr radius"][0],
     "Angstrom" : const.physical_constants["Bohr radius"][0]*1e10,
     "SI"       : const.physical_constants["Bohr radius"][0]
+}
+
+conversion_facs_dipole = {
+    "int"      : 1.0,
+    "AU"       : 1.0,
+    "Debye"    : const.c*const.e*const.physical_constants["Bohr radius"][0]*1e21,
+    "SI"       : 10e-21/const.c
 }
 
 

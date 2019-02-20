@@ -36,7 +36,7 @@ from .QuantumChem.Classes.general import Energy as EnergyClass
 
 from .QuantumChem.Classes.general import PositionAxis
 
-from .General.units import conversion_facs_mass,conversion_facs_energy,conversion_facs_position
+from .General.units import conversion_facs_mass,conversion_facs_energy,conversion_facs_position,conversion_facs_dipole
 from .General.UnitsManager import energy_units,position_units
 
 from .General.timeaxis import TimeAxis

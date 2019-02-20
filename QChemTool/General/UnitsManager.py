@@ -67,7 +67,7 @@ class Manager(metaclass=Singleton):
                       "position"]
 
     units = {"energy"       : ["int", "1/cm", "eV", "meV", "THz",
-                               "J", "SI", "nm", "Ha", "AU"],
+                               "J", "SI", "nm", "Ha", "AU", "kcal/mol"],
              "frequency"    : ["1/fs", "int", "1/cm", "THz","Hz","SI","nm"],
              "dipolemoment" : ["Debye"],
              "temperature"  : ["2pi/fs", "int", "Kelvin", "Celsius",
@@ -90,7 +90,8 @@ class Manager(metaclass=Singleton):
                    "2pi/fs":"2pi/fs",
                    "int":"2pi/fs",
                    "meV":"meV",
-                   "nm":"nm"}
+                   "nm":"nm",
+                   "kcal/mol":"kcal/mol"}
                    
     units_repre_latex = {"Kelvin":"K",
                    "Celsius":"C",
@@ -105,7 +106,8 @@ class Manager(metaclass=Singleton):
                    "AU":"AU",
                    "Bohr":"Bohr",
                    "Angstrom":"\AA",
-                   "Hartree":"Ha"}                  
+                   "Hartree":"Ha",
+                   "kcal/mol":"kcal$\cdot$mol$^{-1}$"}                  
 
     def __init__(self):
 

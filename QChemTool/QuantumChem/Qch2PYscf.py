@@ -163,6 +163,19 @@ def molecule_to_PYscf_Pot(mol):
 #-------------------------------------------------------------------------------------------------        
     mol_scf.atom.append(['He',np.array([1.23456789,1.23456789,1.23456789])*conversion_facs_position["Angstrom"]])    
     
+# =============================================================================
+#     TEST PART
+# =============================================================================
+    print("Printing atomic information....")
+    for ii in range(len(mol_scf.atom)):
+        print(mol_scf.atom[ii])
+    print("Printing AO information....")
+    for ii in range(len(mol_scf.basis)):
+        print(mol_scf.basis[ii])
+# =============================================================================
+#     END OF THE TEST PART
+# =============================================================================
+    
     #building imput molecule for PYscf program
     mol_scf.build()
     mol_scf._atm[len(mol_scf._atm)-1,0]=1

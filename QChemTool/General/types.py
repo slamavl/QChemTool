@@ -61,6 +61,44 @@ def UnitsManagedArray(name,shape=None):
             '{} must be either a list or numpy.array'.format(name))
     return prop 
 
+def UnitsManagedPosition(name):
+    """Scalar property with units managed
+    
+    Warning: The type of the property depends on the object; The object
+    has to be EnergyUnitsManaged or similar.
+    """    
+    storage_name = '_'+name
+    
+    @property
+    def prop(self): 
+        val = getattr(self,storage_name)
+        return self.convert_position_2_current_u(val) # This is a method defined in
+                                             # the class which handles units
+    @prop.setter
+    def prop(self,value):
+        setattr(self,storage_name,self.convert_position_2_internal_u(value))
+        
+    return prop 
+
+def UnitsManagedEnergy(name):
+    """Scalar property with units managed
+    
+    Warning: The type of the property depends on the object; The object
+    has to be EnergyUnitsManaged or similar.
+    """    
+    storage_name = '_'+name
+    
+    @property
+    def prop(self): 
+        val = getattr(self,storage_name)
+        return self.convert_energy_2_current_u(val) # This is a method defined in
+                                             # the class which handles units
+    @prop.setter
+    def prop(self,value):
+        setattr(self,storage_name,self.convert_energy_2_internal_u(value))
+        
+    return prop 
+
 def EnergyUnitsManagedArray(name,shape=None):
     """Array property with units managed
     
