@@ -985,7 +985,8 @@ class Molecule:
         return Phi,Psi,Chi,center
 
         
-    def get_ESP_grid(self,state_indx=0,load_grid=None,gridfile="ESPGrid",grid=None,verbose=True):
+    def get_ESP_grid(self,state_indx=0,load_grid=None,gridfile="ESPGrid",
+                     grid=None,ghost_at=None,verbose=True):
         '''Calculates electrostatic potential on grid.
         
           **For this kind of calculation it is important to run Gaussian wit 5D 7F option**
@@ -1013,6 +1014,10 @@ class Molecule:
             File name from which we load the grid points
         grid : grid class
             Definition of orthogonal grid for calculation of ESP cube files
+        ghost_at : list of integers
+            Specify indexes of nuclei which shoudl not be included into potential
+            energy calculation (their contribution will be substracted from the 
+            whole complex)
           
         Returns
         ----------
@@ -1039,6 +1044,7 @@ class Molecule:
         '''
         
         from ..Qch2PYscf import potential_basis_PYscf_grid
+        from ...General.Potential import potential_charge
         
         debug=True
         if state_indx==0: # ESP of ground state will be calculated.
@@ -1153,7 +1159,22 @@ class Molecule:
                 self.mol_spec['Nuc_pot']=np.copy(potential_nuc)
                 self.mol_spec['Points_pot']=np.copy(positions)
             print("             End of Debuging part")
-            
+        
+        if ghost_at is not None:
+            at_coor = self.struc.coor._value[ghost_at]
+            at_charge = self.struc.ncharge[ghost_at]
+            Nat = len(ghost_at)
+            # Npoints 
+            RR_points = np.tile(positions,(Nat,1,1))
+            RR_at = np.tile(at_coor,(Npoints,1,1))
+            RR_at = RR_at.swapaxes(0,1)
+            RR = RR_points-- RR_at
+            RR = np.linalg.norm(RR,axis=2)  # matrix has a dimension of  N_at x Npoints
+            pot_ghost = np.dot(at_charge,1/RR)
+        else:
+            pot_ghost = np.zeros(Npoints,dtype="f8")
+        
+        
         if load_grid=='GausESP' or load_grid=='qchem':
             print("        Output for loaded grids") 
             if do_ground_state:
@@ -1162,7 +1183,7 @@ class Molecule:
                 potential_grnd[:,0]=positions[:,0]
                 potential_grnd[:,1]=positions[:,1]
                 potential_grnd[:,2]=positions[:,2]
-                potential_grnd[:,3]=potential_el+potential_nuc
+                potential_grnd[:,3]=potential_el + potential_nuc - pot_ghost
                 print('Ground state ESP calculation finished')
                 return potential_grnd
                 
@@ -1173,14 +1194,14 @@ class Molecule:
                 potential_exct[:,1]=positions[:,1]
                 potential_exct[:,2]=positions[:,2]
                 for ii in range(Npoints):
-                    potential_exct[ii,3]=potential_el[ii,2]+potential_nuc[ii]                
+                    potential_exct[ii,3]=potential_el[ii,2] + potential_nuc[ii] - pot_ghost[ii]             
                 
                 potential_grnd=np.zeros((Npoints,4))
                 potential_grnd[:,0]=positions[:,0]
                 potential_grnd[:,1]=positions[:,1]
                 potential_grnd[:,2]=positions[:,2]
                 for ii in range(Npoints):
-                    potential_grnd[ii,3]=potential_el[ii,0]+potential_nuc[ii]
+                    potential_grnd[ii,3]=potential_el[ii,0] + potential_nuc[ii] - pot_ghost[ii]
                 
                 potential_tran=np.zeros((Npoints,4))
                 potential_tran[:,0]=positions[:,0]
