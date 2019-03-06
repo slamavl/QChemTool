@@ -542,22 +542,29 @@ class Structure(UnitsManaged):
         connected = self.get_bonded_atoms()
         
         bonded_14 = []
+        excluded = []
         for ii in range(self.nat):
             bonded_14tmp = []
+            bonded_13tmp = []
             for jj in connected[ii]:
                 bonded_14tmp.append(jj)
             for kk in bonded_14tmp.copy():
                 for jj in connected[kk]:
                     if jj!=ii:
                          bonded_14tmp.append(jj)
-            bonded_14tmp = list(np.unique(bonded_14tmp))
+            bonded_13tmp = np.unique(bonded_14tmp)
+            bonded_14tmp = list(bonded_13tmp)
             for kk in bonded_14tmp.copy():
                 for jj in connected[kk]:
                     if jj!=ii:
                          bonded_14tmp.append(jj)
             bonded_14tmp = np.unique(bonded_14tmp)
-            bonded_14.append(list(bonded_14tmp))
-        return bonded_14
+            excluded.append(list(bonded_14tmp))
+            
+            # sorted(list(set(indx_all) - set(Molecules[ii])))
+            
+            bonded_14.append(list( set(bonded_14tmp) - set(bonded_13tmp) ))
+        return excluded, bonded_14
             
                 
     def get_distance_matrixes(self):
