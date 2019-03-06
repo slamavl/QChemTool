@@ -166,14 +166,14 @@ def molecule_to_PYscf_Pot(mol,verbose=False):
 # =============================================================================
 #     TEST PART
 # =============================================================================
-	if verbose:
-    	print("Printing atomic information....")
-    	for ii in range(len(mol_scf.atom)):
-        	print(mol_scf.atom[ii])
-    	print("Printing AO information....")
-    	for atom in mol_scf.atom:
-        	if atom[0]!="He":
-            	print(mol_scf.basis[atom[0]])
+    if verbose:
+        print("Printing atomic information....")
+        for ii in range(len(mol_scf.atom)):
+            print(mol_scf.atom[ii])
+        print("Printing AO information....")
+        for atom in mol_scf.atom:
+            if atom[0]!="He":
+                print(mol_scf.basis[atom[0]])
 # =============================================================================
 #     END OF THE TEST PART
 # =============================================================================
