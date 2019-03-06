@@ -1168,7 +1168,7 @@ class Molecule:
             RR_points = np.tile(positions,(Nat,1,1))
             RR_at = np.tile(at_coor,(Npoints,1,1))
             RR_at = RR_at.swapaxes(0,1)
-            RR = RR_points-- RR_at
+            RR = RR_points - RR_at
             RR = np.linalg.norm(RR,axis=2)  # matrix has a dimension of  N_at x Npoints
             pot_ghost = np.dot(at_charge,1/RR)
         else:
