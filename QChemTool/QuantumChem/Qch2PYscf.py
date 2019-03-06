@@ -97,7 +97,7 @@ def TransMat(orbit):
                       "repeat the Gaussian calculation with '5D' keyword or do"
                       "not transform '5d' to 'd' orbitals before using PyScf")
 
-def molecule_to_PYscf_Pot(mol):
+def molecule_to_PYscf_Pot(mol,verbose=False):
     """
     Transforms the molecule defined in `molecule` class into definition required
     for PyScf calculation of electrostatic potential. For this calculation extra
@@ -166,12 +166,14 @@ def molecule_to_PYscf_Pot(mol):
 # =============================================================================
 #     TEST PART
 # =============================================================================
-    print("Printing atomic information....")
-    for ii in range(len(mol_scf.atom)):
-        print(mol_scf.atom[ii])
-    print("Printing AO information....")
-    for ii in range(len(mol_scf.basis)):
-        print(mol_scf.basis[ii])
+	if verbose:
+    	print("Printing atomic information....")
+    	for ii in range(len(mol_scf.atom)):
+        	print(mol_scf.atom[ii])
+    	print("Printing AO information....")
+    	for atom in mol_scf.atom:
+        	if atom[0]!="He":
+            	print(mol_scf.basis[atom[0]])
 # =============================================================================
 #     END OF THE TEST PART
 # =============================================================================
