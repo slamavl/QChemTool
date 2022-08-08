@@ -650,7 +650,8 @@ def read_gaussian_log(filename,verbose=False):
               elif ' Calculate overlap and kinetic energy integrals' in line:
                   sec_flag = 'Basis information'
               elif ' NAtoms=' in line:
-                  NAtoms = int(thisline[1])
+                  thisline = line.split("=")[1].split()
+                  NAtoms = int(thisline[0])
                   Nat=NAtoms
               elif 'nuclear repulsion energy' in line:
                   E_Nuc=Energy(float(thisline[3]))
@@ -907,7 +908,7 @@ def read_gaussian_log(filename,verbose=False):
                       Nmodes=NAtoms*3-6
                       ModeNum=0
                       for ii in range(Nmodes):
-                          qc.nm_info.append({})
+                          nm_info.append({})
                       nm_coef=numpy.zeros((3*NAtoms,Nmodes))
                       elements=numpy.zeros(NAtoms)
                   else: 
