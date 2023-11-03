@@ -200,6 +200,8 @@ class DensityGrid(PositionUnitsManaged):
         for kk in range(Natom):
             thisline = flines[kk+6].split()
             self.at_charge[kk]=float(thisline[1])
+            if self.at_charge[kk] == 0.0:
+                self.at_charge[kk]=float(thisline[0])
             for ii in range(3):
                 Coor[kk,ii]=float(thisline[ii+2])
         
@@ -222,6 +224,8 @@ class DensityGrid(PositionUnitsManaged):
         for kk in range(Natom+il,len(flines)):
             line = flines[kk]           # The current line as string
             thisline = line.split()     # The current line split into segments
+            if len(thisline) == 0:      # Skip blank lines (even at the end of the file)
+                continue
             for ii in range(6):
                 self.data[counter[0],counter[1],counter[2]]=float(thisline[ii])
                 counter[2]+=1
