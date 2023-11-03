@@ -247,6 +247,8 @@ def read_gaussian_fchk(filename, **kwargs):
                   denscount_row=0
                 elif sec_flag=='tot_scf_dens' and 'Charges' in line:
                   sec_flag = None
+                elif "Orthonormal basis" in line:
+                    sec_flag = None
                 else:
                   if sec_flag == 'geo_info':
                       if index==2:
