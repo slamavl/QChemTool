@@ -1,0 +1,2 @@
+To compile:
+python -m numpy.f2py -c fortranmodule.f95 wrapper.f95 -m wrapper --f90flags="-fopenmp -ffree-line-length-none"
